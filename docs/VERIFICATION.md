@@ -26,12 +26,19 @@ Backend tests use real native PostgreSQL with both Flyway migrations. They verif
 
 The browser scenario registers Alice and Bob in separate contexts, checks personal-data isolation, creates a group, adds a named participant and accepts an invitation, writes shared expenses from both users, and verifies ₹30 owed after ₹100/₹40 equal-split expenses. It creates a stale offline draft, checks both drafts in conflict review, and explicitly accepts the latest server record. It then **stops the actual Spring context**, saves a ₹20 expense locally, restarts Spring against the same still-running PostgreSQL database, and verifies exactly one upload and a ₹40 settlement. It refreshes/re-authenticates, records Pending → Paid → Confirmed, removes Bob’s access and verifies that his trip disappears, checks mobile overflow, captures screenshots, and reloads the cached PWA with the browser fully offline. No JavaScript page errors were observed.
 
-## What has not been verified or deployed
+## Deployment follow-up: 2026-10-02
 
-- No permanent PostgreSQL 17 installation or production database/credentials was configured. The disposable test database is not your authoritative financial database.
-- Native PostgreSQL installer steps and the documented `pg_dump`/`pg_restore` recovery procedure have **not** been executed here. Those tools are not included in the embedded test runtime. Restore into a new isolated database before relying on a backup.
-- ngrok 3.39.9 is installed, but no authenticated HTTPS tunnel was started, and no remote two-device/tunnel test was performed.
-- GitHub Pages has not been enabled or published, the feature branch has not been pushed, and workflows have not run on GitHub. At initial inspection, the remote repository had no commits or actual `main` branch. The README explains initial-branch and Pages setup.
+- Pushed commit `f36f22a` to `feat/self-hosted-multiuser` in `Sarvesh1barve/MoneyMate`, without rewriting history. The first branch became the remote default; `main` does not yet exist.
+- [GitHub CI run 36947884127](https://github.com/Sarvesh1barve/MoneyMate/actions/runs/36947884127) passed both frontend and backend jobs.
+- Enabled GitHub Pages with Actions, set the public API origin repository variable, and successfully completed [Pages run 36948217582](https://github.com/Sarvesh1barve/MoneyMate/actions/runs/36948217582). The published `/MoneyMate/` page returned HTTP 200 and rendered the sign-in screen in the browser.
+- Installed official PostgreSQL 17.11 Windows binaries and initialized a persistent loopback-only cluster using SCRAM-SHA-256, with a restricted application role and ignored locally generated secrets. Started the production jar; both Flyway migrations applied successfully. Production contained zero users at this check.
+- Started the authenticated ngrok HTTPS tunnel with request inspection disabled. Both local and public `/api/health` returned HTTP 200 with `{"status":"up"}`. Anonymous `/api/me` returned HTTP 401.
+- Re-ran the background starter while services were running; it reused them without creating duplicate backend/database processes. Stop commands have not been exercised because services were requested to remain running. See [operations](OPERATIONS.md).
+
+## What has not been verified
+
+- The graphical PostgreSQL installer has not been exercised; this laptop uses the official native binary distribution instead. The documented `pg_dump`/`pg_restore` recovery procedure has **not** been executed. Restore into a new isolated database before relying on a backup.
+- The two-user browser suite passed against the local test environment. It has not been repeated on two separate physical devices through the public tunnel; the public deployment checks covered page rendering, runtime configuration, CORS, and API availability.
 - No native installed-PWA launch, iOS/Safari install flow, OS share sheet, clipboard permission flow, or third-party-cookie-blocking browser profile was manually tested. The authentication design uses no cookies.
 - The automated browser scenario concentrates on the two-user trip, authorization, conflict, and offline flows. It is not an exhaustive browser test of every account/category/budget/theme form; those calculations and relevant backend validations are tested separately.
 
@@ -49,5 +56,5 @@ Sessions require re-login after refresh or their 30-minute expiry. Cached data i
 - `backend/src/main/resources/db/migration/`: relational tables, typed financial records/views and constraints.
 - `frontend/tests/`, `frontend/e2e/`, `backend/src/test/`: finance, persistence, authorization and browser tests.
 - `.github/workflows/`: CI and frontend-only Pages publishing.
-- `scripts/start-backend.ps1`, `backend/.env.example`, Maven wrapper: local operation.
+- `scripts/start-backend.ps1`, `scripts/start-local-stack.ps1`, `scripts/stop-local-stack.ps1`, `backend/.env.example`, Maven wrapper: local operation.
 - `README.md`, `docs/ARCHITECTURE.md`, `docs/API.md`: exact commands, deployment, backup/recovery, ownership and API documentation.

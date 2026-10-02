@@ -4,6 +4,8 @@ An Angular PWA for private personal finances and shared trips, backed by Spring 
 
 **© 2026 Sarvesh Barve. All rights reserved.** The application renders the current year dynamically. This ownership notice does not assert a registered trademark.
 
+**Live site:** [MoneyMate on GitHub Pages](https://sarvesh1barve.github.io/MoneyMate/). The feature branch has been pushed and the frontend deployed. This laptop now runs a persistent PostgreSQL 17.11 database, the production Spring Boot jar, and an HTTPS ngrok tunnel. See [local operation and restart instructions](docs/OPERATIONS.md); the services must remain running for remote synchronization.
+
 ## What is implemented
 
 - Email/password registration and login, BCrypt password hashing, 30-minute bearer sessions, rate limits, logout, `/api/me`, strict CORS, and server-side ownership checks.
@@ -47,7 +49,7 @@ CREATE DATABASE moneymate OWNER moneymate;
 \q
 ```
 
-Keep `pg_hba.conf` host authentication set to `scram-sha-256`. Do not publish PostgreSQL through ngrok or open port 5432 to other computers. Use an up-to-date supported PostgreSQL minor release. The automated suite has been run against native PostgreSQL 14.15 supplied by the test-only embedded runtime; a production PostgreSQL 17 installation has not been performed on this laptop.
+Keep `pg_hba.conf` host authentication set to `scram-sha-256`. Do not publish PostgreSQL through ngrok or open port 5432 to other computers. Use an up-to-date supported PostgreSQL minor release. The automated suite runs against native PostgreSQL 14.15 supplied by the test-only embedded runtime. This laptop's persistent database uses PostgreSQL 17.11 from the official Windows binary distribution, with its own data directory and restricted application role; see [operations](docs/OPERATIONS.md). The installation steps above are for a new machine.
 
 ## 3. Backend configuration and startup
 
@@ -137,7 +139,7 @@ cd D:\MoneyMate
 git push -u origin feat/self-hosted-multiuser
 ```
 
-This repository initially has no `main` commit. Decide which reviewed commit becomes its initial default `main` branch in GitHub before relying on automatic main-branch deployment. Do not force-push. Once `main` exists, normal merges/pushes to `main` trigger Pages deployment; **Frontend to GitHub Pages → Run workflow** can also publish a selected reviewed branch after Pages/environment permissions permit it. Publishing is not part of the local test run.
+The first push made `feat/self-hosted-multiuser` the remote default branch; there is currently no `main` branch. The site was published using **Frontend to GitHub Pages → Run workflow** on the feature branch. Continue using that manual workflow until a reviewed `main` branch is established. Once `main` exists, frontend changes pushed to it trigger deployment automatically. No history was rewritten. See [operations](docs/OPERATIONS.md) for CLI deployment commands and updating the tunnel origin.
 
 Local production preview, including `/MoneyMate/`, manifest and service worker:
 
@@ -219,4 +221,4 @@ Stop the live backend before switching its `DB_URL` to the recovered database. K
 
 This is a small laptop-hosted application, with 30-second refresh rather than instant realtime. Password recovery, email verification, automatic session renewal, recurring budgets, attachments, cross-currency conversions, and bank/payment integration are not implemented. Money supports one payer per expense; its stored payer-array model allows a later extension. Settlement suggestions reduce transfers but do not claim a globally minimal transfer count. Full snapshots and indefinitely retained tombstones/operation IDs favor safety for a small group over large-scale efficiency.
 
-GitHub Pages activation/deployment, a real ngrok tunnel, native production database installation, and backup/restore commands require the operator’s accounts/configuration and are reported separately from local automated verification. No remote hosting or tunnel is claimed to be live just because local tests pass.
+GitHub Pages deployment, the persistent PostgreSQL 17.11 database, and the ngrok HTTPS health check were verified on this laptop. Remote two-device use and backup recovery remain separate operational checks; see the [verification report](docs/VERIFICATION.md). Background services do not restart automatically after Windows restarts.
