@@ -29,6 +29,9 @@ export class Cache {
   async setMeta(key: string, value: any) {
     return (await this.db).put('meta', value, key);
   }
+  async deleteMeta(key: string) {
+    return (await this.db).delete('meta', key);
+  }
   async records(user: string) {
     return (await (await this.db).getAllFromIndex('records', 'user', user)).map((r) => r.entry);
   }
@@ -103,13 +106,11 @@ export class Cache {
       if (trip && !allowedTrips.has(trip) && !pendingTrips.has(trip)) {
         await tx.objectStore('records').delete([user, local.id]);
         for (const p of pending.filter((p) => p.operation.id === local.id))
-          await tx
-            .objectStore('outbox')
-            .put({
-              ...p,
-              error:
-                'Trip access is unavailable. Your draft is retained for copying; it cannot be uploaded.',
-            });
+          await tx.objectStore('outbox').put({
+            ...p,
+            error:
+              'Trip access is unavailable. Your draft is retained for copying; it cannot be uploaded.',
+          });
       } else if (!protectedIds.has(local.id) && !snapshot.records.some((e) => e.id === local.id))
         await tx.objectStore('records').delete([user, local.id]);
     }

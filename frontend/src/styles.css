@@ -1358,7 +1358,7 @@ footer {
     gap: 18px;
     margin-bottom: 24px;
   }
-  .page-heading > button {
+  .page-heading > button:not(.always-visible) {
     display: none;
   }
   .metrics {
@@ -1520,6 +1520,52 @@ footer {
   .split-value {
     max-width: 100px;
   }
+}
+
+.remember-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.remember-option input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+.invite-banner {
+  margin-bottom: 20px;
+  border-color: var(--accent);
+}
+.trip-selector .new-trip {
+  border-style: dashed;
+  flex-shrink: 0;
+}
+.invite-result input {
+  min-width: 0;
+  width: 100%;
+}
+.auth-card > .full {
+  margin-top: 12px;
+}
+.payment-summary {
+  margin: 20px 0;
+}
+.payment-line {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.payment-line > strong {
+  font-size: 17px;
+  color: var(--accent);
+}
+.payment-summary > small {
+  display: block;
+  margin-top: 14px;
 }
 @media (prefers-reduced-motion: reduce) {
   * {

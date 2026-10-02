@@ -1,5 +1,11 @@
 # Local verification report
 
+## Trip and sign-in update: 2026-10-02
+
+On the new `feat/trip-invites-device-login` branch, `npm.cmd test` passed **17/17** frontend tests and `npm.cmd run build:pages` built the `/MoneyMate/` bundle. `backend\mvnw.cmd -q test` passed **19/19** tests against disposable native PostgreSQL, including a general single-use invitation, remembered-device challenge replay/revocation, and real WebAuthn registration/assertion/replay/revocation. A 390 × 844 Chromium browser test passed: two trips could be created, a link opened in a second account and joined automatically, a ₹100 equal-split expense displayed “Bob pays Alice ₹50”, the remembered session survived reload, and a virtual platform passkey signed in after logout. The original comprehensive two-user/offline browser test also passed against the updated backend.
+
+The current-user participant now defaults as the expense payer. The last browser rerun used a freshly rebuilt frontend and passed. Testing used port 8081 and a disposable database; production data was not used. A pre-migration custom-format production backup was made and its archive catalog read successfully, but a full restore remains untested. Physical iPhone Face ID/Touch ID, share sheet, and Pages deployment have not been verified in this local run.
+
 The completed local checks below ran on Windows with Node 22.14.0, Java 21.0.12, Angular 21.2.25, Spring Boot 3.5.16, Maven 3.9.11, native test PostgreSQL 14.15, and Playwright Chromium 153. Tests used synthetic accounts and a disposable database, never a production database. Run logs were generated on 2026-10-01.
 
 ## Results
@@ -44,7 +50,7 @@ The browser scenario registers Alice and Bob in separate contexts, checks person
 
 ## Implementation limits
 
-Sessions require re-login after refresh or their 30-minute expiry. Cached data is available on a trusted device without local encryption. Password recovery/email verification, recurring transactions/budgets, bank integration, payment execution, multiple payer entry, currency conversion, instant realtime updates, and JSON import are not implemented. Sharing a settlement summary never grants access or changes payment status. Full snapshots and indefinitely retained operation IDs/tombstones are intended for a small group. See [architecture](ARCHITECTURE.md) for these choices and ownership rules.
+Sessions require re-login after refresh or their 30-minute expiry unless the user opts into remembered sign-in for up to 30 days on that browser. A passkey may also be used for fresh sign-in on a supported device. Cached data is available on a trusted device without local encryption. Password recovery/email verification, recurring transactions/budgets, bank integration, payment execution, multiple payer entry, currency conversion, instant realtime updates, and JSON import are not implemented. Sharing a settlement summary never grants access or changes payment status. Full snapshots and indefinitely retained operation IDs/tombstones are intended for a small group. See [architecture](ARCHITECTURE.md) for these choices and ownership rules.
 
 ## Main files
 

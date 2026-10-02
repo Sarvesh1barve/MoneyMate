@@ -8,13 +8,14 @@ import org.springframework.context.ConfigurableApplicationContext;
 /** Disposable browser-test database. This class is absent from the production jar. */
 public class BrowserTestServer {
   public static void main(String[] args) throws Exception {
-    Path marker = Path.of("../.local/pause-api").toAbsolutePath().normalize();
+    String port = System.getenv().getOrDefault("MM_TEST_PORT", "8080");
+    Path marker = Path.of("../.local/pause-api-" + port).toAbsolutePath().normalize();
     Files.createDirectories(marker.getParent());
     try (EmbeddedPostgres postgres = EmbeddedPostgres.builder().setPort(0).start()) {
       System.setProperty("spring.datasource.url", postgres.getJdbcUrl("postgres", "postgres"));
       System.setProperty("spring.datasource.username", "postgres");
       System.setProperty("spring.datasource.password", "");
-      System.setProperty("server.port", "8080");
+      System.setProperty("server.port", port);
       System.setProperty("server.address", "127.0.0.1");
       ConfigurableApplicationContext context = SpringApplication.run(MoneyMateApplication.class);
       while (true) {

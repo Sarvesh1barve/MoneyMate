@@ -3,6 +3,7 @@ import { Cache } from './cache';
 import { Body, Entry, Kind, Member, Pending, Snapshot, User } from './models';
 import { validate } from './finance';
 import { replay } from './sync-engine';
+import { DeviceSignIn, passkeyCredential } from './device-signin';
 
 export class RequestError extends Error {
   constructor(
@@ -28,12 +29,24 @@ export class Store {
   readonly appName = signal('MoneyMate');
   readonly authenticated = signal(false);
   readonly ready = signal(false);
+  readonly remembered = signal(false);
+  readonly authNotice = signal('');
+  readonly devices = signal<any[]>([]);
+  readonly passkeys = signal<any[]>([]);
+  readonly incomingInvite = signal(sessionStorage.getItem('moneymate-invite') || '');
+  readonly joining = signal(false);
+  readonly deviceSignIn = new DeviceSignIn(this.cache, () => this.apiUrl());
   private token = '';
+  private expiresAt = 0;
+  private authEpoch = 0;
+  private renewal?: Promise<boolean>;
   private channel = new BroadcastChannel('moneymate-session');
   constructor() {
     this.channel.onmessage = (event) => {
       if (event.data?.logout === this.user()?.id) {
+        this.authEpoch++;
         this.token = '';
+        this.remembered.set(false);
         this.authenticated.set(false);
         this.user.set(null);
         this.entries.set([]);
@@ -54,10 +67,18 @@ export class Store {
     this.user.set((await this.cache.meta<User>('lastUser')) || null);
     await this.load();
     this.state.set(this.user() ? 'Offline workspace · sign in to sync' : 'Sign in to begin');
+    try {
+      this.remembered.set(!!(await this.deviceSignIn.read()));
+      if (this.remembered()) await this.restoreSession();
+    } catch (e) {
+      if (e instanceof RequestError && e.status === 0) this.state.set('Server unavailable');
+    }
     this.ready.set(true);
+    if (this.authenticated()) void this.sync();
     window.addEventListener('online', () => void this.sync());
     setInterval(() => {
-      if (document.visibilityState === 'visible' && this.token) void this.sync();
+      if (document.visibilityState === 'visible' && (this.token || this.remembered()))
+        void this.sync();
     }, 30000);
   }
   async configure(value: string) {
@@ -76,7 +97,14 @@ export class Store {
     localStorage.setItem('moneymate-api', url.origin);
     this.state.set('Server endpoint saved');
   }
-  async request(path: string, method = 'GET', body?: any): Promise<any> {
+  async request(path: string, method = 'GET', body?: any, renew = true): Promise<any> {
+    if (
+      renew &&
+      this.user() &&
+      this.remembered() &&
+      (!this.token || this.expiresAt < Date.now() + 30000)
+    )
+      await this.restoreSession();
     if (!this.apiUrl()) throw new RequestError(0, 'Set the backend HTTPS endpoint in Settings.');
     let response: Response;
     try {
@@ -101,17 +129,28 @@ export class Store {
     const data = await response
       .json()
       .catch(() => ({ message: 'Unexpected server response. Check the API endpoint.' }));
+    if (response.status === 401 && renew && this.remembered() && (await this.restoreSession()))
+      return this.request(path, method, body, false);
     if (!response.ok)
       throw new RequestError(response.status, data.message || 'Request failed.', data.detail);
     return data;
   }
-  async login(email: string, password: string, name: string, register: boolean) {
-    const session = await this.request(register ? '/auth/register' : '/auth/login', 'POST', {
-      email,
-      password,
-      name,
-    });
+  async login(email: string, password: string, name: string, register: boolean, remember = false) {
+    const session = await this.request(
+      register ? '/auth/register' : '/auth/login',
+      'POST',
+      {
+        email,
+        password,
+        name,
+      },
+      false,
+    );
+    await this.finishLogin(session, remember);
+  }
+  private async acceptSession(session: any) {
     this.token = session.token;
+    this.expiresAt = Date.parse(session.expiresAt);
     this.authenticated.set(true);
     this.user.set(session.user);
     this.entries.set([]);
@@ -120,15 +159,121 @@ export class Store {
     this.activity.set([]);
     await this.cache.setMeta('lastUser', session.user);
     await this.load();
+  }
+  private async finishLogin(session: any, remember: boolean) {
+    this.authEpoch++;
+    const oldDevice = await this.deviceSignIn.read();
+    await this.deviceSignIn.forget();
+    this.remembered.set(false);
+    await this.acceptSession(session);
+    if (oldDevice && oldDevice.userId === session.user.id) {
+      const oldId = oldDevice.id;
+      await this.request(`/auth/devices/${oldId}`, 'DELETE').catch(() => {});
+    }
+    this.authNotice.set('');
+    if (remember) {
+      try {
+        await this.deviceSignIn.remember(
+          (...args) => this.request(...args),
+          session.user.id,
+          'My browser',
+        );
+        this.remembered.set(true);
+      } catch {
+        this.authNotice.set(
+          'Signed in for this session. Remembered sign-in could not be enabled on this browser.',
+        );
+      }
+    }
     await this.sync();
+  }
+  async restoreSession(): Promise<boolean> {
+    if (this.renewal) return this.renewal;
+    const epoch = this.authEpoch;
+    this.renewal = (async () => {
+      try {
+        const session = await this.deviceSignIn.restore(
+          (p, m, b) => this.request(p, m, b, false),
+          this.user()?.id,
+        );
+        if (epoch !== this.authEpoch) return false;
+        if (!session) {
+          this.remembered.set(false);
+          return false;
+        }
+        await this.acceptSession(session);
+        this.state.set('Connected');
+        return true;
+      } catch (e) {
+        if (epoch === this.authEpoch && e instanceof RequestError && e.status === 401) {
+          await this.deviceSignIn.forget();
+          this.remembered.set(false);
+          this.token = '';
+          this.authenticated.set(false);
+          this.state.set('Remembered sign-in expired · sign in again');
+          return false;
+        }
+        throw e;
+      } finally {
+        this.renewal = undefined;
+      }
+    })();
+    return this.renewal;
+  }
+  async passkeyLogin(remember: boolean) {
+    const start = await this.request('/auth/passkey/options', 'POST', {}, false);
+    const credential = await passkeyCredential(start.options, false);
+    const session = await this.request(
+      '/auth/passkey/verify',
+      'POST',
+      { challengeId: start.challengeId, credential },
+      false,
+    );
+    await this.finishLogin(session, remember);
+  }
+  async addPasskey(name: string) {
+    const start = await this.request('/auth/passkeys/options', 'POST', {});
+    const credential = await passkeyCredential(start.options, true);
+    await this.request('/auth/passkeys', 'POST', {
+      challengeId: start.challengeId,
+      credential,
+      name: name || 'My passkey',
+    });
+    await this.loadSignInMethods();
+  }
+  async loadSignInMethods() {
+    const [devices, passkeys] = await Promise.all([
+      this.request('/auth/devices'),
+      this.request('/auth/passkeys'),
+    ]);
+    this.devices.set(devices);
+    this.passkeys.set(passkeys);
+  }
+  async removeSignInMethod(kind: 'devices' | 'passkeys', id: string) {
+    await this.request(`/auth/${kind}/${encodeURIComponent(id)}`, 'DELETE');
+    if (kind === 'devices' && (await this.deviceSignIn.read())?.id === id) {
+      await this.deviceSignIn.forget();
+      this.remembered.set(false);
+      this.token = '';
+      this.authenticated.set(false);
+      this.state.set('Device sign-in removed · sign in again');
+      this.devices.set(this.devices().filter((d) => d.id !== id));
+      return;
+    }
+    await this.loadSignInMethods();
   }
   async logout() {
     const user = this.user();
     if (!user) return;
+    this.authEpoch++;
     await navigator.locks.request(`moneymate-sync:${user.id}`, async () => {
       try {
-        await this.request('/auth/logout', 'POST', {});
+        await this.request('/auth/logout', 'POST', {}, false);
       } catch {}
+      await this.deviceSignIn.forget();
+      this.remembered.set(false);
+      this.devices.set([]);
+      this.passkeys.set([]);
       this.token = '';
       this.authenticated.set(false);
       await this.cache.forget(user.id);
@@ -195,6 +340,14 @@ export class Store {
   }
   async sync() {
     if (this.busy() || !this.user()) return;
+    if (!this.token && this.remembered()) {
+      try {
+        await this.restoreSession();
+      } catch {
+        this.state.set('Server unavailable');
+        return;
+      }
+    }
     if (!this.token) {
       this.state.set(
         this.pending().length
@@ -255,10 +408,11 @@ export class Store {
     await this.sync();
   }
   async join(token: string) {
-    await this.request('/invitations/join', 'POST', { token });
+    const result = await this.request('/invitations/join', 'POST', { token });
     await this.sync();
+    return result.tripId as string;
   }
-  async invite(trip: string, participant: string) {
+  async invite(trip: string, participant: string | null = null) {
     return this.request(`/trips/${trip}/invitations`, 'POST', { participantId: participant });
   }
   async revoke(trip: string, user: string) {

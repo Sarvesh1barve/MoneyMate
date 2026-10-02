@@ -1,10 +1,11 @@
 import { Component, ElementRef, ViewChild, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Store } from './store';
 import { Body, Entry, Kind, Pending, Transfer } from './models';
 import * as finance from './finance';
+import { invitationLink, invitationToken } from './invitations';
 
 @Component({
   selector: 'mm-workspace',
@@ -14,6 +15,7 @@ import * as finance from './finance';
 export class Workspace {
   readonly s = inject(Store);
   readonly route = inject(ActivatedRoute);
+  readonly router = inject(Router);
   readonly f = finance;
   readonly year = new Date().getFullYear();
   readonly page = signal('home');
@@ -45,6 +47,11 @@ export class Workspace {
   toDate = '';
   joinCode = '';
   invitation = '';
+  inviteBusy = false;
+  remember = false;
+  passkeyName = '';
+  readonly passkeySupported = typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
+  private lastJoinAttempt = '';
   authOpen = false;
   draft: Body = {};
   editing?: Entry;
@@ -56,14 +63,38 @@ export class Workspace {
   constructor() {
     this.route.data.subscribe((d) => this.page.set(d['page']));
     this.route.queryParamMap.subscribe((p) => {
+      if (p.get('trip')) this.selectedTrip.set(p.get('trip')!);
       if (p.get('invite')) {
-        this.joinCode = p.get('invite')!;
-        this.notice.set('Sign in, then join this trip using the invitation below.');
+        try {
+          const token = invitationToken(p.get('invite')!);
+          this.s.incomingInvite.set(token);
+          sessionStorage.setItem('moneymate-invite', token);
+          // Preserve across sign-in/registration, but remove the secret from visible history.
+          void this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { invite: null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true,
+          });
+        } catch (e) {
+          this.notice.set((e as Error).message);
+        }
       }
     });
     effect(() => {
       document.documentElement.dataset['theme'] = this.settings()?.body['theme'] || 'system';
       document.title = this.s.appName();
+    });
+    effect(() => {
+      const token = this.s.incomingInvite(),
+        user = this.s.user();
+      if (token && user && this.s.ready() && this.s.authenticated() && !this.s.joining()) {
+        const attempt = `${user.id}:${token}`;
+        if (this.lastJoinAttempt !== attempt) {
+          this.lastJoinAttempt = attempt;
+          void this.acceptInvitation();
+        }
+      }
     });
   }
   rows(kind: string) {
@@ -153,6 +184,24 @@ export class Workspace {
   suggestions() {
     return finance.settlements(this.balances());
   }
+  balanceSentence(net: number) {
+    if (net > 0) return `${this.amount(net, this.tripCurrency())} to receive`;
+    if (net < 0) return `${this.amount(-net, this.tripCurrency())} to pay`;
+    return 'Settled up';
+  }
+  splitDescription(method: string) {
+    return (
+      (
+        {
+          EQUAL: 'Split equally',
+          SELECTED: 'Split equally among selected people',
+          EXACT: 'Split by exact amounts',
+          PERCENT: 'Split by percentages',
+          SHARES: 'Split by shares',
+        } as Record<string, string>
+      )[method] || 'Custom split'
+    );
+  }
   owner() {
     return this.trip()?.ownerId === this.s.user()?.id;
   }
@@ -188,11 +237,31 @@ export class Workspace {
   async authenticate() {
     this.saving.set(true);
     await this.action(async () => {
-      await this.s.login(this.email, this.password, this.name, this.register);
+      await this.s.login(this.email, this.password, this.name, this.register, this.remember);
       this.password = '';
       this.authOpen = false;
     }, 'Your workspace is ready.');
     this.saving.set(false);
+  }
+  async authenticatePasskey() {
+    this.saving.set(true);
+    await this.action(async () => {
+      await this.s.passkeyLogin(this.remember);
+      this.authOpen = false;
+    }, 'Signed in with your passkey.');
+    this.saving.set(false);
+  }
+  async addPasskey() {
+    this.saving.set(true);
+    await this.action(
+      () => this.s.addPasskey(this.passkeyName),
+      'Passkey added. Use “Sign in with a passkey” next time.',
+    );
+    this.saving.set(false);
+  }
+  removeSignInMethod(kind: 'devices' | 'passkeys', id: string) {
+    if (confirm('Remove this sign-in method? You can still sign in with your password.'))
+      void this.action(() => this.s.removeSignInMethod(kind, id), 'Sign-in method removed.');
   }
   async logout() {
     if (
@@ -229,7 +298,10 @@ export class Workspace {
       : '';
     if (kind === 'expense' || kind === 'settlement') this.draft['currency'] = this.tripCurrency();
     if (kind === 'expense') {
-      this.draft['payerId'] ||= this.tripRows('participant')[0]?.id;
+      const ownParticipant = this.s
+        .members()
+        .find((m) => m.tripId === this.trip()?.id && m.userId === this.s.user()?.id)?.participantId;
+      this.draft['payerId'] ||= ownParticipant || this.tripRows('participant')[0]?.id;
       this.selectedParts = {};
       this.splitValues = {};
       for (const p of this.tripRows('participant')) {
@@ -281,7 +353,10 @@ export class Workspace {
         ['expense', 'participant', 'settlement'].includes(this.kind) ? this.trip()!.id : null,
         this.editing,
       );
-      if (this.kind === 'trip') this.selectedTrip.set(entry.id);
+      if (this.kind === 'trip') {
+        this.selectTrip(entry.id);
+        this.tripTab.set('overview');
+      }
       this.close();
       this.notice.set('Saved on this device. Changes synchronize when the server is reachable.');
     } catch (e) {
@@ -306,20 +381,44 @@ export class Workspace {
     await navigator.clipboard.writeText(text);
     this.notice.set('Copied to clipboard.');
   }
-  async invite(participant: string) {
+  selectTrip(id: string) {
+    this.selectedTrip.set(id);
+    this.invitation = '';
+    void this.router.navigate(['/trips'], { queryParams: { trip: id }, replaceUrl: true });
+  }
+  async invite(participant: string | null = null) {
+    this.inviteBusy = true;
     await this.action(async () => {
       await this.s.sync();
       const result = await this.s.invite(this.trip()!.id, participant);
-      this.invitation = `${location.origin}${location.pathname}#/trips?invite=${result.token}`;
-    }, 'Invitation is valid for 24 hours and can be used once.');
+      this.invitation = invitationLink(result.token, location);
+    }, 'Link ready. Share it with one person; opening it adds them after sign-in. Expires in 24 hours.');
+    this.inviteBusy = false;
   }
   async join() {
     await this.action(async () => {
-      let code = this.joinCode.trim();
-      if (code.includes('invite=')) code = code.split('invite=')[1].split('&')[0];
-      await this.s.join(code);
-      this.joinCode = '';
-    }, 'Joined the shared trip.');
+      this.s.incomingInvite.set(invitationToken(this.joinCode));
+      sessionStorage.setItem('moneymate-invite', this.s.incomingInvite());
+      this.lastJoinAttempt = `${this.s.user()?.id}:${this.s.incomingInvite()}`;
+      await this.acceptInvitation();
+    });
+  }
+  async acceptInvitation() {
+    if (this.s.joining() || !this.s.authenticated()) return;
+    this.s.joining.set(true);
+    await this.action(async () => {
+      const trip = await this.s.join(this.s.incomingInvite());
+      this.cancelInvitation();
+      this.selectTrip(trip);
+      this.tripTab.set('overview');
+      this.authOpen = false;
+    }, 'You’ve joined the trip. Your participant is ready.');
+    this.s.joining.set(false);
+  }
+  cancelInvitation() {
+    this.s.incomingInvite.set('');
+    this.joinCode = '';
+    sessionStorage.removeItem('moneymate-invite');
   }
   async revoke(user: string) {
     if (
@@ -381,7 +480,30 @@ export class Workspace {
     void this.action(() => this.s.configure(this.endpoint), 'Server endpoint saved.');
   }
   shareInvitation() {
-    void this.action(() => this.share(this.invitation));
+    void this.action(async () => {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: `Join ${this.trip()?.body['name'] || 'my trip'} in ${this.s.appName()}`,
+            url: this.invitation,
+          });
+          return;
+        } catch (error) {
+          if ((error as Error).name === 'AbortError') return;
+        }
+      }
+      await navigator.clipboard.writeText(this.invitation);
+      this.notice.set('Invitation link copied.');
+    });
+  }
+  copyInvitation() {
+    void this.action(
+      () => navigator.clipboard.writeText(this.invitation),
+      'Invitation link copied.',
+    );
+  }
+  actionLoadSignInMethods() {
+    void this.action(() => this.s.loadSignInMethods());
   }
   copyDraft(p: Pending) {
     void this.action(() => this.share(JSON.stringify(p.operation.body, null, 2)));
