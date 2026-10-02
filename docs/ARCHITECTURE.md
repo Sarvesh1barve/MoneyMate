@@ -1,0 +1,47 @@
+# MoneyMate architecture
+
+`GitHub Pages /MoneyMate/ → HTTPS ngrok endpoint → Spring Boot on 127.0.0.1:8080 → PostgreSQL on the laptop`
+
+The repository was cloned from `https://github.com/Sarvesh1barve/MoneyMate` on 2026-10-01. GitHub reported default branch `main`, zero commits, zero branches, zero source files, and Pages disabled. The user authorized a new implementation in `D:\MoneyMate`. Development is on `feat/self-hosted-multiuser`; no prior history was replaced.
+
+## Ownership and permissions
+
+- Personal accounts, categories, transactions, budgets, and settings belong to one authenticated user. The server derives identity from a hashed opaque session token, never a client user ID.
+- Trips have one owner. Owners manage the group, named participants, invitations, and removal. Members may add/edit/delete shared expenses and record pending settlements. All members see the same server records after sync.
+- A named participant grants no access. An owner generates a 256-bit, single-use, 24-hour invitation for an unlinked participant. Only its SHA-256 hash is stored. Joining requires authentication and atomically links one user to that participant. Regenerating an invitation invalidates previous unused invitations for the participant.
+- Removing a member revokes API access immediately for subsequent requests. The named participant and financial history remain. The next successful snapshot purges their downloaded trip cache; unsent drafts are retained only in conflict review. Previously downloaded data on an offline device cannot be remotely erased.
+- Pending settlements do not move balances. Payers or the owner may mark Paid. Recipients or the owner confirm. Owners can cancel, and a payer may cancel their own Pending record. Only Confirmed records affect net balances. MoneyMate does not execute payments.
+
+## Storage and write protocol
+
+PostgreSQL is authoritative. Flyway manages migrations. `app_user`, `auth_session`, `membership`, `invitation`, `sync_operation`, and `activity` are dedicated tables. Typed financial records share the `record` table: UUID, kind, owner, trip scope, monotonically increasing version, soft deletion flag, validated JSONB body, and server timestamp. Readable SQL views expose accounts, transactions, categories, budgets, trips, participants, expenses, settlements, and expense splits. The shared envelope makes offline tombstones and version checks consistent; payload validation and cross-record invariants are implemented in the service transaction rather than trusting JSON supplied by the browser.
+
+`POST /api/sync` accepts one operation with a stable UUID and expected base version. It locks the user row and, for shared records, the trip row. The current entity is re-read after acquiring the trip lock. A transaction commits the record, audit activity, and deduplication result together. Repeating an identical operation returns the original result; changing its content under the same operation ID yields 409. Access is checked before serving deduplicated results. Cross-member stale writes return 409 with the current permitted record. Tombstones cannot be silently restored.
+
+The frontend atomically saves the optimistic record and outbox operation to IndexedDB. Multiple edits are queued sequentially with increasing expected versions. The outbox reuses operation IDs even after uncertain delivery. A Web Lock serializes synchronization across browser tabs. A conflict blocks later changes to that entity, preserves the newest local draft, and offers copying, discarding in favor of the latest server record, or explicitly reapplying a reviewed draft using the latest server version. Removed/deleted resources cannot be revived by this flow.
+
+Snapshots preserve records with pending edits. Successful refreshes reconcile canonical server data and purge inaccessible trips. Sync runs after login and local saves, on the browser `online` event, every 30 seconds while visible and authenticated, and from Sync Now. This is polling, not realtime delivery.
+
+## Authentication and offline access
+
+BCrypt work factor 12 hashes passwords (12–64 characters, at most 72 UTF-8 bytes). Sessions use cryptographically random opaque bearer tokens with 30-minute expiry; only token hashes are stored on the server. Tokens live solely in JavaScript memory. There are no authentication cookies, localStorage secrets, or service-worker token caches. Re-login renews access and works where third-party cookies are blocked. Logout revokes the current token online; offline it discards the in-memory token, which expires on the server. Other devices’ sessions are not revoked by a local logout.
+
+Login/registration are limited by normalized email and direct peer IP using bounded, expiring in-memory counters. This suits a single laptop process, not a horizontally scaled deployment. Behind ngrok, the peer IP may be shared; the implementation intentionally does not trust arbitrary forwarded IP headers. This can impose a shared ceiling on sign-in attempts. Bad credentials get generic messages. JSON bodies are limited to 64 KiB before parsing, and domain strings, arrays, dates, and amounts are validated. API responses are `no-store`; no request bodies, tokens, password hashes, or financial data are logged by the application.
+
+The cached user profile lets the same device reopen an offline workspace after refresh without storing credentials. This is a convenience on a trusted device, **not local authentication or encryption**. The UI explains this. A new device requires online registration/login. Logout clears that user’s cache and outbox, with explicit UI warning if drafts would be lost. Account switching clears visible state before loading that account’s isolated IndexedDB keys. Browser tabs receive logout notifications. Changing API origins requires resolving pending changes and clearing the current workspace to avoid cross-server confusion.
+
+## Money and dates
+
+Amounts are safe integer minor units, with a per-record cap of 9 trillion. `Intl.NumberFormat` selects currency precision and display. Currency codes are explicit, default INR; no exchange conversion occurs. Calendar dates remain `YYYY-MM-DD` strings. Income, expenses, and transfers are distinct; transfers alter account balances but never spending. Future-dated entries appear as upcoming and affect period budgets, but not today’s balance/cash flow. Budgets are fixed windows from their start date (one day, seven days, one month), category/subcategory scope, or entire trip cost; they do not renew automatically.
+
+Equal/selected, exact, percentage in basis points, and integer-share splits are implemented independently in TypeScript and Java. Weighted allocation uses integer/BigInt arithmetic and largest remainders, tied by participant UUID. The backend replaces browser-supplied allocations and payer arrays with recalculated values. Payers are represented as an array for future extension; the UI/API currently enforce one payer. Trip currency is immutable. Settlement suggestions greedily pair the largest debtor and creditor with stable UUID tie breaks. They reduce transfers to at most nonzero participants minus one; they are not a proof of the globally minimal possible transfer count.
+
+## Deployment boundary
+
+Only `frontend/dist/frontend/browser` is uploaded to Pages. Hash routes, a `/MoneyMate/` base href, relative manifest URLs, and Angular’s service worker keep navigation and cached assets under the repository path. No API data is in service-worker data groups; IndexedDB is the separate per-user cache. Runtime `config.json` is public and contains only application name and API origin. Users can override the endpoint in Settings; it is not a secret. A changing tunnel requires updating that one setting or the repository build variable.
+
+CORS accepts `https://sarvesh1barve.github.io` and `http://localhost:4200` by default. An origin has no `/MoneyMate/` path. Credentials are disabled for CORS because bearer headers are explicit. Spring binds to loopback; expose only the HTTP service through an HTTPS tunnel. PostgreSQL must remain bound to localhost. Do not forward its port.
+
+## Scope limits
+
+No email verification, email password reset, automatic token refresh, bank integration, currency conversion, recurring transactions/budgets, attachments, push notifications, realtime sockets, or actual payment execution. No JSON import is exposed; exports cannot overwrite data. A lost password currently requires operator intervention; do not share an account. Full snapshots suit a small group; add pagination/change cursors and managed retention before substantially larger use. Idempotency rows and tombstones currently remain indefinitely to support stale devices. Public registration is rate limited, not invitation-only. Protect the laptop OS, database credentials, backups, and tunnel account.

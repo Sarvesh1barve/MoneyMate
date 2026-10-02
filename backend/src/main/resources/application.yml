@@ -1,0 +1,26 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+  tomcat:
+    max-http-form-post-size: 128KB
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/moneymate}
+    username: ${DB_USER:moneymate}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 8
+  flyway:
+    enabled: true
+  jackson:
+    deserialization:
+      fail-on-trailing-tokens: true
+moneymate:
+  cors-origins: ${CORS_ORIGINS:http://localhost:4200,https://sarvesh1barve.github.io}
+  session-minutes: 30
+logging:
+  level:
+    org.springframework.security: WARN

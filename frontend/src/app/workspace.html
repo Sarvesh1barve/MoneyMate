@@ -1,0 +1,1218 @@
+<aside class="sidebar">
+  <a class="brand" routerLink="/home"
+    ><span class="brand-mark">m<span>↗</span></span
+    ><span>{{ s.appName() }}<small>A little clarity, every day.</small></span></a
+  >
+  <div class="nav-label">YOUR WORKSPACE</div>
+  <nav aria-label="Main navigation">
+    @for (item of nav; track item.id) {
+      <a [routerLink]="'/' + item.id" routerLinkActive="active"
+        ><span class="nav-icon">{{ item.icon }}</span
+        >{{ item.label }}
+        @if (item.id === 'trips') {
+          <span class="nav-count">{{ rows('trip').length }}</span>
+        }
+      </a>
+    }
+  </nav>
+  <div class="sidebar-note">
+    <span class="privacy-icon">⌂</span><strong>Your money. Your space.</strong>
+    <p>Private personal finances.<br />Shared adventures, together.</p>
+  </div>
+  <div class="profile">
+    <span class="avatar">{{ s.user()?.name?.charAt(0) || 'M' }}</span>
+    <div>
+      <strong>{{ s.user()?.name || 'Welcome to MoneyMate' }}</strong
+      ><small>{{ s.user() ? 'Personal workspace' : 'Make yourself at home' }}</small>
+    </div>
+  </div>
+</aside>
+<div class="workspace">
+  <header class="topbar">
+    <div>
+      <span class="breadcrumb">Workspace</span><span class="breadcrumb-divider">/</span
+      ><strong>{{ page() | titlecase }}</strong>
+    </div>
+    <div class="top-actions">
+      <span class="status" [class.warning]="s.state() !== 'Synced'" role="status"
+        ><i></i>{{ s.busy() ? 'Synchronizing…' : s.state() }}</span
+      >
+      @if (s.user()) {
+        <button class="icon-button" aria-label="Sync now" (click)="s.sync()" [disabled]="s.busy()">
+          ↻
+        </button>
+        @if (!s.authenticated()) {
+          <button class="small" (click)="authOpen = true">Sign in</button>
+        }
+      }
+      <span class="avatar small-avatar">{{ s.user()?.name?.charAt(0) || 'M' }}</span>
+    </div>
+  </header>
+  <main>
+    @if (notice()) {
+      <div class="notice" role="status">
+        {{ notice()
+        }}<button class="icon-button" (click)="notice.set('')" aria-label="Dismiss notification">
+          ×
+        </button>
+      </div>
+    }
+    @if (!s.ready()) {
+      <section class="empty"><h1>Opening your workspace…</h1></section>
+    }
+    @if (s.ready() && (!s.user() || authOpen)) {
+      <section class="onboarding">
+        <div class="welcome-copy">
+          <span class="eyebrow">LESS GUESSWORK. MORE LIVING.</span>
+          <h1>Make room for<br />what matters.</h1>
+          <p>
+            Keep everyday spending in perspective. Share the good times, split the costs, and know
+            where you stand.
+          </p>
+          <div class="welcome-features">
+            <span>↗ Your everyday money</span><span>⌁ Trips, made fair</span
+            ><span>⌂ Stored on your laptop</span>
+          </div>
+          <div class="welcome-art">
+            <div class="art-circle"></div>
+            <div class="art-card">
+              <span>A little more clarity</span><strong>One expense<br />at a time.</strong>
+              <div class="art-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+        </div>
+        <div class="card auth-card">
+          <span class="eyebrow">YOUR PERSONAL SPACE</span>
+          <h2>{{ register ? 'Let’s get you started' : 'Welcome back' }}</h2>
+          <p class="muted">
+            {{
+              register
+                ? 'Create an account on your MoneyMate server.'
+                : 'Sign in to connect with your laptop server.'
+            }}
+          </p>
+          <form (ngSubmit)="authenticate()">
+            @if (register) {
+              <label
+                >Your name<input
+                  name="name"
+                  [(ngModel)]="name"
+                  autocomplete="name"
+                  maxlength="80"
+                  required
+              /></label>
+            }
+            <label
+              >Email<input
+                name="email"
+                [(ngModel)]="email"
+                type="email"
+                autocomplete="username"
+                required
+                maxlength="254" /></label
+            ><label
+              >Password<input
+                name="password"
+                [(ngModel)]="password"
+                type="password"
+                [autocomplete]="register ? 'new-password' : 'current-password'"
+                minlength="12"
+                maxlength="64"
+                required
+            /></label>
+            @if (register) {
+              <small class="muted"
+                >Use at least 12 characters. Passwords are securely hashed on the server.</small
+              >
+            }
+            <button class="primary full" [disabled]="saving() || !s.apiUrl()">
+              {{ saving() ? 'Connecting…' : register ? 'Create account' : 'Sign in' }}
+              <span>→</span>
+            </button>
+          </form>
+          <button class="text-button full" (click)="register = !register">
+            {{ register ? 'Already have an account? Sign in' : 'New here? Create an account' }}
+          </button>
+          <details [open]="!s.apiUrl()">
+            <summary>Connect your backend</summary>
+            <p class="muted">
+              Enter your HTTPS ngrok origin. For local development, use http://localhost:8080.
+            </p>
+            <label
+              >API endpoint<input
+                type="url"
+                [(ngModel)]="endpoint"
+                [placeholder]="s.apiUrl() || 'https://your-endpoint.ngrok.app'" /></label
+            ><button (click)="configure()">Save endpoint</button>
+          </details>
+          @if (s.user()) {
+            <button class="text-button full" (click)="authOpen = false">
+              Continue in cached workspace
+            </button>
+          }
+          <p class="fine-print">
+            Only use offline access on a trusted device. Local cached data is not encrypted. Signing
+            out clears this device’s workspace.
+          </p>
+        </div>
+      </section>
+    }
+    @if (s.user() && !authOpen) {
+      @if (!s.authenticated() || s.state() === 'Server unavailable') {
+        <div class="offline-banner">
+          ⌂
+          <span
+            ><strong>{{
+              s.state() === 'Server unavailable'
+                ? 'Your server is taking a break.'
+                : 'You’re in your cached workspace.'
+            }}</strong>
+            Keep working locally.
+            {{
+              s.state() === 'Server unavailable'
+                ? 'Sync resumes when your laptop and tunnel are reachable.'
+                : 'Sign in to synchronize with the server.'
+            }}</span
+          >
+        </div>
+      }
+      @if (page() === 'home') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">YOUR MONEY, AT A GLANCE</span>
+            <h1>A clearer picture.</h1>
+            <p>Welcome back, {{ s.user()!.name }}. Here’s where things stand.</p>
+          </div>
+          <button class="primary" (click)="open('transaction')">＋ Add transaction</button>
+        </div>
+        <div class="metrics">
+          <article class="metric featured">
+            <div class="metric-label">Account balance <span>▣</span></div>
+            <strong>{{ amount(totalBalance()) }}</strong
+            ><small>Across your {{ currency() }} accounts · as of today</small>
+            <div class="metric-decoration"></div>
+          </article>
+          <article class="metric">
+            <div class="metric-label">Total income <span class="positive">↙</span></div>
+            <strong>{{ amount(totals().income) }}</strong
+            ><small><i class="dot positive-bg"></i> All recorded income through today</small>
+          </article>
+          <article class="metric">
+            <div class="metric-label">Total spending <span class="expense-color">↗</span></div>
+            <strong>{{ amount(totals().spending) }}</strong
+            ><small><i class="dot expense-bg"></i> Expenses only · transfers excluded</small>
+          </article>
+        </div>
+        <div class="dashboard-grid">
+          <section class="card">
+            <div class="section-heading">
+              <div>
+                <h2>Recent activity</h2>
+                <p>The little things add up.</p>
+              </div>
+              <a routerLink="/transactions">View all ↗</a>
+            </div>
+            @for (t of transactions().slice(0, 5); track t.id) {
+              <div class="transaction-row">
+                <span class="transaction-icon" [class.income-icon]="t.body['type'] === 'INCOME'">{{
+                  t.body['type'] === 'TRANSFER' ? '↔' : t.body['type'] === 'INCOME' ? '↙' : '↗'
+                }}</span>
+                <div class="row-main">
+                  <strong>{{ t.body['description'] }}</strong
+                  ><small
+                    >{{ label(t.body['categoryId']) }} · {{ t.body['date'] }}
+                    @if (pending(t.id)) {
+                      · Pending
+                    }
+                  </small>
+                </div>
+                <strong [class.positive]="t.body['type'] === 'INCOME'"
+                  >{{ t.body['type'] === 'INCOME' ? '+' : t.body['type'] === 'EXPENSE' ? '−' : ''
+                  }}{{ amount(t.body['amount'], t.body['currency']) }}</strong
+                >
+              </div>
+            } @empty {
+              <div class="empty compact">
+                <span class="empty-symbol">↔</span>
+                <h3>Your story starts here.</h3>
+                <p>Add your first transaction and see the bigger picture take shape.</p>
+                <button (click)="open('transaction')">Add a transaction</button>
+              </div>
+            }
+          </section>
+          <section class="card">
+            <div class="section-heading">
+              <div>
+                <h2>Spending mix</h2>
+                <p>Where your {{ currency() }} goes.</p>
+              </div>
+              <span class="soft-icon">◴</span>
+            </div>
+            @for (c of spending().slice(0, 5); track c.name) {
+              <div class="chart-row">
+                <div>
+                  <span>{{ c.name }}</span
+                  ><strong>{{ amount(c.amount) }}</strong>
+                </div>
+                <div class="bar"><i [style.width.%]="c.width"></i></div>
+              </div>
+            } @empty {
+              <div class="empty compact">
+                <span class="empty-symbol">◴</span>
+                <h3>A fresh start.</h3>
+                <p>Your spending breakdown will appear as you add expenses.</p>
+              </div>
+            }
+          </section>
+          <section class="card">
+            <div class="section-heading">
+              <div>
+                <h2>Budget check-in</h2>
+                <p>A plan for your priorities.</p>
+              </div>
+              <a routerLink="/budgets">All budgets ↗</a>
+            </div>
+            @for (b of rows('budget').slice(0, 3); track b.id) {
+              <div class="chart-row">
+                <div>
+                  <strong>{{ b.body['name'] }}</strong
+                  ><span>{{ progress(b.body) }}%</span>
+                </div>
+                <div
+                  class="bar"
+                  [class.over]="f.budgetSpent(b.body, s.entries()) > b.body['amount']"
+                >
+                  <i [style.width.%]="progress(b.body)"></i>
+                </div>
+                <small
+                  >{{ amount(f.budgetSpent(b.body, s.entries()), b.body['currency']) }} of
+                  {{ amount(b.body['amount'], b.body['currency']) }}</small
+                >
+              </div>
+            } @empty {
+              <div class="empty compact">
+                <p>Give your spending a little direction.</p>
+                <button (click)="open('budget')">Set your first budget</button>
+              </div>
+            }
+          </section>
+          <section class="card trip-promo">
+            <span class="eyebrow">BETTER, TOGETHER</span>
+            <h2>Good company.<br />Clear balances.</h2>
+            <p>Plan a trip, share an expense, and keep the focus on the memories.</p>
+            <a class="button" routerLink="/trips">Explore your trips ↗</a
+            ><span class="trip-decoration">⌁</span>
+          </section>
+        </div>
+        @if (upcoming().length) {
+          <section class="card upcoming">
+            <h2>Upcoming entries</h2>
+            <p class="muted">
+              Future-dated transactions; included in budgets, excluded from today’s balances.
+            </p>
+            @for (t of upcoming(); track t.id) {
+              <div class="transaction-row">
+                <span>{{ t.body['date'] }}</span
+                ><strong class="row-main">{{ t.body['description'] }}</strong
+                ><span>{{ amount(t.body['amount'], t.body['currency']) }}</span>
+              </div>
+            }
+          </section>
+        }
+      }
+      @if (page() === 'transactions') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">THE EVERYDAY DETAILS</span>
+            <h1>Your transactions.</h1>
+            <p>Every entry, all in one place.</p>
+          </div>
+          <button class="primary" (click)="open('transaction')">＋ Add transaction</button>
+        </div>
+        <section class="card">
+          <div class="filters">
+            <label class="search-label"
+              >Search<input
+                [(ngModel)]="search"
+                placeholder="Search descriptions, notes, categories" /></label
+            ><label
+              >Type<select [(ngModel)]="filter">
+                <option value="ALL">All types</option>
+                <option>EXPENSE</option>
+                <option>INCOME</option>
+                <option>TRANSFER</option>
+              </select></label
+            ><label
+              >Category<select [(ngModel)]="categoryFilter">
+                <option value="">All categories</option>
+                @for (c of rows('category'); track c.id) {
+                  <option [value]="c.id">{{ c.body['name'] }}</option>
+                }
+              </select></label
+            ><label
+              >Sort<select [(ngModel)]="sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="amount">Highest amount</option>
+              </select></label
+            >
+          </div>
+          <details class="more-filters">
+            <summary>Date and currency filters</summary>
+            <div class="form-grid">
+              <label>From<input type="date" [(ngModel)]="fromDate" /></label
+              ><label>To<input type="date" [(ngModel)]="toDate" /></label
+              ><label
+                >Currency<input
+                  maxlength="3"
+                  [(ngModel)]="currencyFilter"
+                  placeholder="All currencies"
+              /></label>
+            </div>
+          </details>
+          @for (t of transactions(); track t.id) {
+            <div class="transaction-row">
+              <span class="transaction-icon">{{
+                t.body['type'] === 'TRANSFER' ? '↔' : t.body['type'] === 'INCOME' ? '↙' : '↗'
+              }}</span>
+              <div class="row-main">
+                <strong>{{ t.body['description'] }}</strong
+                ><small
+                  >{{ t.body['date'] }} · {{ label(t.body['categoryId']) }} · {{ t.body['type'] }}
+                  @if (pending(t.id)) {
+                    <span class="pill">Pending</span>
+                  }
+                </small>
+              </div>
+              <strong class="row-amount" [class.positive]="t.body['type'] === 'INCOME'">{{
+                amount(t.body['amount'], t.body['currency'])
+              }}</strong>
+              <div class="row-actions">
+                <button class="small" (click)="open('transaction', t)">Edit</button
+                ><button class="small" (click)="open('transaction', t, true)">Duplicate</button
+                ><button class="small danger-text" (click)="remove(t)">Delete</button>
+              </div>
+            </div>
+          } @empty {
+            <div class="empty">
+              <span class="empty-symbol">↔</span>
+              <h3>No transactions here yet.</h3>
+              <p>Add an entry or adjust your filters.</p>
+            </div>
+          }
+        </section>
+      }
+      @if (page() === 'accounts') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">A PLACE FOR EVERY RUPEE</span>
+            <h1>Your accounts.</h1>
+            <p>Balances calculated from opening amounts and transactions.</p>
+          </div>
+          <button class="primary" (click)="open('account')">＋ Add account</button>
+        </div>
+        <div class="cards-grid">
+          @for (a of rows('account'); track a.id) {
+            <article class="card account-card">
+              <span class="soft-icon">▣</span>
+              <h2>{{ a.body['name'] }}</h2>
+              <div class="big-number">
+                {{ amount(f.balance(a, s.entries()), a.body['currency']) }}
+              </div>
+              <p class="muted">
+                Opening balance {{ amount(a.body['openingBalance'], a.body['currency']) }}
+              </p>
+              <div class="row-actions">
+                <button (click)="open('account', a)">Edit</button
+                ><button class="danger-text" (click)="remove(a)">Delete</button>
+              </div>
+            </article>
+          } @empty {
+            <div class="card empty">
+              <h3>Start with what you have.</h3>
+              <p>
+                Add cash, bank, or wallet accounts. Accounts are optional for personal transactions.
+              </p>
+              <button (click)="open('account')">Add your first account</button>
+            </div>
+          }
+        </div>
+      }
+      @if (page() === 'budgets') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">SPEND WITH INTENTION</span>
+            <h1>A plan that fits.</h1>
+            <p>Daily, weekly, monthly, category, and whole-trip budgets.</p>
+          </div>
+          <button class="primary" (click)="open('budget')">＋ Create budget</button>
+        </div>
+        <div class="cards-grid">
+          @for (b of rows('budget'); track b.id) {
+            <article class="card">
+              <div class="section-heading">
+                <h2>{{ b.body['name'] }}</h2>
+                <span class="pill">{{ b.body['period'] }}</span>
+              </div>
+              <p class="muted">
+                {{
+                  b.body['period'] === 'TRIP'
+                    ? label(b.body['budgetTripId'])
+                    : b.body['startDate'] + ' → ' + f.budgetEnd(b.body)
+                }}
+                · {{ b.body['categoryId'] ? label(b.body['categoryId']) : 'All categories' }}
+              </p>
+              <div class="big-number">
+                {{ amount(f.budgetSpent(b.body, s.entries()), b.body['currency']) }}
+              </div>
+              <p class="muted">of {{ amount(b.body['amount'], b.body['currency']) }}</p>
+              <div class="bar" [class.over]="f.budgetSpent(b.body, s.entries()) > b.body['amount']">
+                <i [style.width.%]="progress(b.body)"></i>
+              </div>
+              <p>
+                {{
+                  amount(b.body['amount'] - f.budgetSpent(b.body, s.entries()), b.body['currency'])
+                }}
+                remaining
+              </p>
+              <div class="row-actions">
+                <button (click)="open('budget', b)">Edit</button
+                ><button class="danger-text" (click)="remove(b)">Delete</button>
+              </div>
+            </article>
+          } @empty {
+            <div class="card empty">
+              <h3>Your priorities, with a plan.</h3>
+              <p>
+                Start with one budget. Pick a fixed period or track the total cost of a shared trip.
+              </p>
+            </div>
+          }
+        </div>
+      }
+      @if (page() === 'trips') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">SHARED MOMENTS. FAIR SPLITS.</span>
+            <h1>Better together.</h1>
+            <p>Trips, households, events, and everything in between.</p>
+          </div>
+          <button class="primary" (click)="open('trip')">＋ Create group</button>
+        </div>
+        <details class="card join-card" [open]="!!joinCode">
+          <summary>Have an invitation? Join a trip</summary>
+          <div class="inline-form">
+            <label
+              >Invitation link or code<input
+                [(ngModel)]="joinCode"
+                placeholder="Paste the invitation shared with you" /></label
+            ><button [disabled]="!s.authenticated()" (click)="join()">Join trip</button>
+          </div>
+          <small class="muted"
+            >Sign in to accept. Each invitation links you to one named participant in one
+            trip.</small
+          >
+        </details>
+        @if (trip(); as trip) {
+          <div class="trip-selector">
+            @for (t of rows('trip'); track t.id) {
+              <button
+                [class.selected]="trip.id === t.id"
+                (click)="selectedTrip.set(t.id); invitation = ''"
+              >
+                {{ t.body['name'] }}
+              </button>
+            }
+          </div>
+          <section class="trip-header">
+            <div>
+              <span class="eyebrow"
+                >{{ trip.body['groupType'] }} · {{ trip.body['currency'] }}</span
+              >
+              <h2>{{ trip.body['name'] }}</h2>
+              <p>
+                {{ tripRows('participant').length }} participants ·
+                {{ tripRows('expense').length }} expenses
+              </p>
+            </div>
+            <div>
+              <div class="big-number">{{ amount(tripTotal(), tripCurrency()) }}</div>
+              <small>Total shared expenses</small>
+            </div>
+            <div class="row-actions">
+              <button (click)="summary()">Share summary ↗</button>
+              @if (owner()) {
+                <button (click)="open('trip', trip)">Edit group</button
+                ><button class="danger-text" (click)="remove(trip)">Delete group</button>
+              }
+              <button class="primary" (click)="open('expense')">＋ Add expense</button>
+            </div>
+          </section>
+          <div class="tabs" role="tablist">
+            @for (
+              tab of ['overview', 'expenses', 'participants', 'settlements', 'activity'];
+              track tab
+            ) {
+              <button
+                role="tab"
+                [attr.aria-selected]="tripTab() === tab"
+                [class.selected]="tripTab() === tab"
+                (click)="tripTab.set(tab)"
+              >
+                {{ tab | titlecase }}
+              </button>
+            }
+          </div>
+          @if (tripTab() === 'overview') {
+            <div class="dashboard-grid">
+              <section class="card">
+                <h2>Everyone’s balance</h2>
+                <p class="muted">
+                  Positive = receives money. Negative = owes money. Only confirmed settlements
+                  change balances.
+                </p>
+                @for (b of balances(); track b.id) {
+                  <div class="transaction-row">
+                    <span class="avatar">{{ label(b.id).charAt(0) }}</span>
+                    <div class="row-main">
+                      <strong>{{ label(b.id) }}</strong
+                      ><small
+                        >Paid {{ amount(b.paid, tripCurrency()) }} · Share
+                        {{ amount(b.owed, tripCurrency()) }}</small
+                      >
+                    </div>
+                    <strong [class.positive]="b.net >= 0" [class.expense-color]="b.net < 0">{{
+                      amount(b.net, tripCurrency())
+                    }}</strong>
+                  </div>
+                }
+              </section>
+              <section class="card">
+                <h2>A simpler way to settle</h2>
+                <p class="muted">Deterministic reduced transfers based on current balances.</p>
+                @for (t of suggestions(); track t.from + t.to) {
+                  <div class="settlement-suggestion">
+                    <strong>{{ label(t.from) }} → {{ label(t.to) }}</strong>
+                    <div>{{ amount(t.amount, tripCurrency()) }}</div>
+                    <button
+                      class="small"
+                      [disabled]="settlementExists(t)"
+                      (click)="recordSettlement(t)"
+                    >
+                      {{ settlementExists(t) ? 'Settlement already pending' : 'Record as Pending' }}
+                    </button>
+                  </div>
+                } @empty {
+                  <div class="empty compact">
+                    <h3>All square.</h3>
+                    <p>No outstanding balances.</p>
+                  </div>
+                }
+              </section>
+            </div>
+          }
+          @if (tripTab() === 'expenses') {
+            <section class="card">
+              @for (e of tripRows('expense'); track e.id) {
+                <div class="transaction-row">
+                  <span class="transaction-icon">↗</span>
+                  <div class="row-main">
+                    <strong>{{ e.body['description'] }}</strong
+                    ><small
+                      >{{ e.body['date'] }} · Paid by {{ label(e.body['payerId']) }} ·
+                      {{ e.body['method'] }}
+                      @if (pending(e.id)) {
+                        · Pending
+                      }
+                    </small>
+                    <details>
+                      <summary>Split details</summary>
+                      @for (p of e.body['allocations']; track p.participantId) {
+                        <div class="split-detail">
+                          {{ label(p.participantId) }}
+                          <strong>{{ amount(p.amount, tripCurrency()) }}</strong>
+                        </div>
+                      }
+                    </details>
+                  </div>
+                  <strong>{{ amount(e.body['amount'], tripCurrency()) }}</strong>
+                  <div class="row-actions">
+                    <button class="small" (click)="open('expense', e)">Edit</button
+                    ><button class="small danger-text" (click)="remove(e)">Delete</button>
+                  </div>
+                </div>
+              } @empty {
+                <div class="empty">
+                  <h3>The first shared memory.</h3>
+                  <p>Add an expense to start splitting fairly.</p>
+                  <button (click)="open('expense')">Add expense</button>
+                </div>
+              }
+            </section>
+          }
+          @if (tripTab() === 'participants') {
+            <section class="card">
+              <div class="section-heading">
+                <div>
+                  <h2>The people in your group</h2>
+                  <p>
+                    A named participant is for calculations. Only linked members have app access.
+                  </p>
+                </div>
+                @if (owner()) {
+                  <button (click)="open('participant')">＋ Add participant</button>
+                }
+              </div>
+              @if (invitation) {
+                <div class="invite-result">
+                  <label
+                    >Single-use invitation · expires in 24 hours<input
+                      readonly
+                      [value]="invitation" /></label
+                  ><button (click)="shareInvitation()">Share invitation</button>
+                </div>
+              }
+              @for (p of tripRows('participant'); track p.id) {
+                <div class="transaction-row">
+                  <span class="avatar">{{ p.body['name'].charAt(0) }}</span>
+                  <div class="row-main">
+                    <strong>{{ p.body['name'] }}</strong
+                    ><small>{{
+                      member(p.id)
+                        ? member(p.id)!.role + ' · linked account'
+                        : 'Named participant · no app access'
+                    }}</small>
+                  </div>
+                  @if (owner()) {
+                    <div class="row-actions">
+                      <button class="small" (click)="open('participant', p)">Edit</button>
+                      @if (!member(p.id)) {
+                        <button
+                          class="small"
+                          [disabled]="!s.authenticated()"
+                          (click)="invite(p.id)"
+                        >
+                          Invite</button
+                        ><button class="small danger-text" (click)="remove(p)">Delete</button>
+                      } @else if (member(p.id)!.role !== 'OWNER') {
+                        <button class="small danger-text" (click)="revoke(member(p.id)!.userId)">
+                          Remove access
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </section>
+          }
+          @if (tripTab() === 'settlements') {
+            <section class="card">
+              <h2>Settlement history</h2>
+              <p class="muted">
+                Pending → Paid → Confirmed. Sharing never marks a settlement paid. No payment is
+                processed by MoneyMate.
+              </p>
+              @for (e of tripRows('settlement'); track e.id) {
+                <div class="transaction-row">
+                  <div class="row-main">
+                    <strong>{{ label(e.body['from']) }} → {{ label(e.body['to']) }}</strong
+                    ><small
+                      >{{ e.body['status'] }}
+                      @if (pending(e.id)) {
+                        · Pending sync
+                      }
+                    </small>
+                  </div>
+                  <strong>{{ amount(e.body['amount'], tripCurrency()) }}</strong>
+                  <div class="row-actions">
+                    @if (e.body['status'] === 'Pending' && canStatus(e, 'Paid')) {
+                      <button class="small" (click)="settlementStatus(e, 'Paid')">Mark Paid</button>
+                    }
+                    @if (e.body['status'] === 'Paid' && canStatus(e, 'Confirmed')) {
+                      <button class="small" (click)="settlementStatus(e, 'Confirmed')">
+                        Confirm receipt
+                      </button>
+                    }
+                    @if (
+                      e.body['status'] !== 'Cancelled' &&
+                      (owner() || (e.body['status'] === 'Pending' && canStatus(e, 'Paid')))
+                    ) {
+                      <button class="small danger-text" (click)="settlementStatus(e, 'Cancelled')">
+                        Cancel
+                      </button>
+                    }
+                  </div>
+                </div>
+              } @empty {
+                <div class="empty">
+                  <p>Use a suggestion in Overview to record a pending settlement.</p>
+                </div>
+              }
+            </section>
+          }
+          @if (tripTab() === 'activity') {
+            <section class="card">
+              <h2>Shared activity</h2>
+              <p class="muted">
+                Latest server activity, refreshed every 30 seconds while signed in and the app is
+                visible.
+              </p>
+              @for (a of s.activity(); track a['id']) {
+                @if (a['trip_id'] === trip.id) {
+                  <div class="transaction-row">
+                    <span class="transaction-icon">↻</span>
+                    <div class="row-main">
+                      <strong>{{ a['actor'] }} · {{ a['action'] }}</strong
+                      ><small>{{ a['created_at'] | date: 'medium' }}</small>
+                    </div>
+                  </div>
+                }
+              }
+            </section>
+          }
+        } @else {
+          <section class="card empty">
+            <span class="empty-symbol">⌁</span>
+            <h2>A trip starts with a group.</h2>
+            <p>Create a group, add named participants, and invite the people who need access.</p>
+            <button class="primary" (click)="open('trip')">Create your first group</button>
+          </section>
+        }
+      }
+      @if (page() === 'insights') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">SEE THE PATTERNS</span>
+            <h1>A little perspective.</h1>
+            <p>Calculated locally from your cached {{ currency() }} transactions through today.</p>
+          </div>
+        </div>
+        <div class="metrics">
+          <article class="metric">
+            <div class="metric-label">Income</div>
+            <strong>{{ amount(totals().income) }}</strong>
+          </article>
+          <article class="metric">
+            <div class="metric-label">Spending</div>
+            <strong>{{ amount(totals().spending) }}</strong>
+          </article>
+          <article class="metric featured">
+            <div class="metric-label">Net cash flow</div>
+            <strong>{{ amount(totals().income - totals().spending) }}</strong>
+          </article>
+        </div>
+        <section class="card">
+          <h2>Spending by category</h2>
+          @for (c of spending(); track c.name) {
+            <div class="chart-row">
+              <div>
+                <strong>{{ c.name }}</strong
+                ><span>{{ amount(c.amount) }}</span>
+              </div>
+              <div class="bar"><i [style.width.%]="c.width"></i></div>
+            </div>
+          } @empty {
+            <div class="empty"><p>Add expenses to discover your spending patterns.</p></div>
+          }
+        </section>
+      }
+      @if (page() === 'settings') {
+        <div class="page-heading">
+          <div>
+            <span class="eyebrow">MAKE IT YOURS</span>
+            <h1>Your workspace, your way.</h1>
+            <p>Connection, preferences, and peace of mind.</p>
+          </div>
+        </div>
+        <div class="dashboard-grid settings-grid">
+          <section class="card">
+            <h2>Connection & synchronization</h2>
+            <dl>
+              <dt>API endpoint</dt>
+              <dd class="wrap">{{ s.apiUrl() || 'Not configured' }}</dd>
+              <dt>Status</dt>
+              <dd>{{ s.state() }}</dd>
+              <dt>Last successful sync</dt>
+              <dd>{{ s.lastSync() ? (s.lastSync() | date: 'medium') : 'Not yet synchronized' }}</dd>
+              <dt>Pending operations</dt>
+              <dd>{{ s.pending().length }}</dd>
+            </dl>
+            <button class="primary" (click)="s.sync()" [disabled]="s.busy()">↻ Sync Now</button>
+            <details>
+              <summary>Change API endpoint</summary>
+              <label
+                >HTTPS backend origin<input [(ngModel)]="endpoint" [placeholder]="s.apiUrl()"
+              /></label>
+              <p class="muted">
+                Sync pending changes first. Changing servers signs you out and clears this cache.
+              </p>
+              <button (click)="configure()">Save endpoint</button>
+            </details>
+          </section>
+          <section class="card">
+            <h2>Appearance & currency</h2>
+            <label
+              >Theme<select
+                #theme
+                [value]="currentTheme()"
+                (change)="saveSettings(theme.value, currency())"
+              >
+                <option value="system">Follow system</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select></label
+            ><label
+              >Default currency<select
+                #curr
+                [value]="currency()"
+                (change)="saveSettings(currentTheme(), curr.value)"
+              >
+                <option>INR</option>
+                <option>USD</option>
+                <option>EUR</option>
+                <option>GBP</option>
+                <option>JPY</option>
+                <option>KWD</option>
+              </select></label
+            >
+            <p class="muted">
+              Charts show the chosen currency. MoneyMate does not convert exchange rates.
+            </p>
+          </section>
+          <section class="card">
+            <div class="section-heading">
+              <h2>Categories</h2>
+              <button class="small" (click)="open('category')">＋ Add category</button>
+            </div>
+            @for (c of rows('category'); track c.id) {
+              <div class="transaction-row">
+                <div class="row-main">
+                  <strong>{{ c.body['name'] }}</strong>
+                  @if (c.body['parentId']) {
+                    <small>Under {{ label(c.body['parentId']) }}</small>
+                  }
+                </div>
+                <button class="small" (click)="open('category', c)">Edit</button
+                ><button class="small danger-text" (click)="remove(c)">Delete</button>
+              </div>
+            }
+          </section>
+          <section class="card">
+            <h2>Your data & privacy</h2>
+            <p>
+              Personal accounts, transactions, categories, budgets, and settings are private to your
+              account. Trips are shared only with authorized members.
+            </p>
+            <p>
+              The backend and database run on your laptop. Remote synchronization is unavailable
+              while the laptop or ngrok tunnel is offline.
+            </p>
+            <p>
+              Offline access works only after this device has cached your workspace. A new device
+              needs an online sign-in. Cached data is not encrypted; use a trusted device.
+            </p>
+            <button (click)="export()">Export personal JSON</button>
+            <p class="muted">
+              Exports may contain sensitive financial information. Store them securely. Server
+              backups are separate.
+            </p>
+            <button class="danger-text" (click)="logout()">Sign out & clear local data</button>
+          </section>
+        </div>
+        @if (conflicts().length) {
+          <section class="card conflicts">
+            <h2>Changes that need your attention</h2>
+            <p>
+              Your draft is retained. Review the server version before explicitly applying your
+              draft over it.
+            </p>
+            @for (p of conflicts(); track p.operationId) {
+              <article class="conflict">
+                <h3>{{ p.operation.kind | titlecase }} · {{ p.error }}</h3>
+                <div class="form-grid">
+                  <details>
+                    <summary>Your pending draft</summary>
+                    <pre>{{ p.operation.body | json }}</pre>
+                  </details>
+                  <details>
+                    <summary>Server version at conflict</summary>
+                    <pre>{{ p.server?.body | json }}</pre>
+                  </details>
+                </div>
+                <div class="row-actions">
+                  <button (click)="copyDraft(p)">Copy draft</button
+                  ><button (click)="resolve(p, false)">
+                    Use latest server version / discard draft
+                  </button>
+                  @if (p.server && !p.server.deleted) {
+                    <button (click)="resolve(p, true)">Apply my draft over latest version</button>
+                  }
+                </div>
+              </article>
+            }
+          </section>
+        }
+      }
+      <button
+        class="fab"
+        aria-label="Quick add expense"
+        (click)="open(page() === 'trips' && trip() ? 'expense' : 'transaction')"
+      >
+        ＋
+      </button>
+    }
+    <footer>
+      <span>{{ s.appName() }} · A little clarity, every day.</span
+      ><span>© {{ year }} Sarvesh Barve. All rights reserved.</span>
+    </footer>
+  </main>
+</div>
+<nav class="mobile-nav" aria-label="Mobile navigation">
+  @for (item of nav; track item.id) {
+    <a [routerLink]="'/' + item.id" routerLinkActive="active"
+      ><span>{{ item.icon }}</span
+      ><small>{{ item.label }}</small></a
+    >
+  }
+</nav>
+
+<dialog #editor aria-labelledby="editor-title" (cancel)="formError.set('')">
+  <form (ngSubmit)="submit()">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">{{
+          kind === 'expense' ? 'SHARED WITH YOUR TRIP' : 'SAVE NOW. SYNC WHEN CONNECTED.'
+        }}</span>
+        <h2 id="editor-title">{{ editing ? 'Edit' : 'Add' }} {{ kind }}</h2>
+      </div>
+      <button type="button" class="icon-button" aria-label="Close form" (click)="close()">×</button>
+    </div>
+    @if (formError()) {
+      <div class="error" role="alert">{{ formError() }}</div>
+    }
+    @if (['account', 'category', 'budget', 'trip', 'participant'].includes(kind)) {
+      <label
+        >Name<input name="recordName" [(ngModel)]="draft['name']" required maxlength="80" autofocus
+      /></label>
+    }
+    @if (['transaction', 'expense'].includes(kind)) {
+      <label
+        >Description<input
+          name="description"
+          [(ngModel)]="draft['description']"
+          required
+          maxlength="160"
+          autofocus
+          placeholder="What was it for?"
+      /></label>
+    }
+    @if (kind === 'transaction') {
+      <label
+        >Transaction type<select name="type" [(ngModel)]="draft['type']">
+          <option value="EXPENSE">Expense</option>
+          <option value="INCOME">Income</option>
+          <option value="TRANSFER">Transfer between accounts</option>
+        </select></label
+      >
+    }
+    @if (['account', 'transaction', 'expense', 'budget', 'trip'].includes(kind)) {
+      <div class="form-grid">
+        @if (kind !== 'trip') {
+          <label
+            >{{ kind === 'account' ? 'Opening balance' : 'Amount'
+            }}<input
+              name="amount"
+              [(ngModel)]="amountText"
+              inputmode="decimal"
+              [required]="kind !== 'account'"
+              placeholder="0.00"
+          /></label>
+        }
+        <label
+          >Currency<select
+            name="currency"
+            [(ngModel)]="draft['currency']"
+            [disabled]="
+              kind === 'expense' || (!!editing && (kind === 'trip' || kind === 'account'))
+            "
+          >
+            <option>INR</option>
+            <option>USD</option>
+            <option>EUR</option>
+            <option>GBP</option>
+            <option>JPY</option>
+            <option>KWD</option>
+          </select></label
+        >
+      </div>
+    }
+    @if (['transaction', 'expense'].includes(kind)) {
+      <label>Date<input type="date" name="date" [(ngModel)]="draft['date']" required /></label>
+    }
+    @if (kind === 'transaction') {
+      <div class="form-grid">
+        <label
+          >{{ draft['type'] === 'TRANSFER' ? 'From account' : 'Account (optional)'
+          }}<select name="account" [(ngModel)]="draft['accountId']">
+            <option [ngValue]="undefined">No account</option>
+            @for (a of rows('account'); track a.id) {
+              <option [value]="a.id">{{ a.body['name'] }} · {{ a.body['currency'] }}</option>
+            }
+          </select></label
+        >
+        @if (draft['type'] === 'TRANSFER') {
+          <label
+            >To account<select name="toAccount" [(ngModel)]="draft['toAccountId']" required>
+              @for (a of rows('account'); track a.id) {
+                <option [value]="a.id">{{ a.body['name'] }} · {{ a.body['currency'] }}</option>
+              }
+            </select></label
+          >
+        } @else {
+          <label
+            >Category<select name="category" [(ngModel)]="draft['categoryId']">
+              <option [ngValue]="undefined">Uncategorized</option>
+              @for (c of rows('category'); track c.id) {
+                <option [value]="c.id">
+                  {{ c.body['parentId'] ? label(c.body['parentId']) + ' / ' : ''
+                  }}{{ c.body['name'] }}
+                </option>
+              }
+            </select></label
+          >
+        }
+      </div>
+    }
+    @if (kind === 'category') {
+      <label
+        >Parent category (optional)<select name="parent" [(ngModel)]="draft['parentId']">
+          <option [ngValue]="undefined">Top-level category</option>
+          @for (c of rows('category'); track c.id) {
+            @if (!c.body['parentId'] && c.id !== editing?.id) {
+              <option [value]="c.id">{{ c.body['name'] }}</option>
+            }
+          }
+        </select></label
+      >
+    }
+    @if (kind === 'budget') {
+      <div class="form-grid">
+        <label
+          >Period<select name="period" [(ngModel)]="draft['period']">
+            <option value="MONTH">One month from start</option>
+            <option value="WEEK">Seven days from start</option>
+            <option value="DAY">One day</option>
+            <option value="TRIP">Entire shared trip</option>
+          </select></label
+        ><label
+          >Starts on<input type="date" name="startDate" [(ngModel)]="draft['startDate']" required
+        /></label>
+      </div>
+      @if (draft['period'] === 'TRIP') {
+        <label
+          >Trip<select name="budgetTrip" [(ngModel)]="draft['budgetTripId']" required>
+            @for (t of rows('trip'); track t.id) {
+              <option [value]="t.id">{{ t.body['name'] }}</option>
+            }
+          </select></label
+        >
+      } @else {
+        <label
+          >Category scope<select name="budgetCategory" [(ngModel)]="draft['categoryId']">
+            <option [ngValue]="undefined">Overall spending</option>
+            @for (c of rows('category'); track c.id) {
+              <option [value]="c.id">{{ c.body['name'] }}</option>
+            }
+          </select></label
+        >
+      }
+    }
+    @if (kind === 'trip') {
+      <label
+        >Group type<select name="groupType" [(ngModel)]="draft['groupType']">
+          <option>Trip</option>
+          <option>Group</option>
+          <option>Event</option>
+          <option>Household</option>
+        </select></label
+      >
+      <p class="muted">
+        You’ll be the owner and first participant. Add other participants, then invite registered
+        users to give them access.
+      </p>
+    }
+    @if (kind === 'participant') {
+      <p class="muted">
+        This adds a named participant for calculations. App access requires a separate invitation.
+      </p>
+    }
+    @if (kind === 'expense') {
+      <div class="form-grid">
+        <label
+          >Paid by<select name="payer" [(ngModel)]="draft['payerId']" required>
+            @for (p of tripRows('participant'); track p.id) {
+              <option [value]="p.id">{{ p.body['name'] }}</option>
+            }
+          </select></label
+        ><label
+          >Split method<select name="splitMethod" [(ngModel)]="draft['method']">
+            <option value="EQUAL">Equally</option>
+            <option value="SELECTED">Selected participants equally</option>
+            <option value="EXACT">Exact amounts</option>
+            <option value="PERCENT">Percentages</option>
+            <option value="SHARES">Shares</option>
+          </select></label
+        >
+      </div>
+      <fieldset>
+        <legend>Included participants</legend>
+        @for (p of tripRows('participant'); track p.id) {
+          <div class="split-input">
+            <label class="checkbox-label"
+              ><input
+                type="checkbox"
+                [name]="'selected-' + p.id"
+                [(ngModel)]="selectedParts[p.id]"
+              />{{ p.body['name'] }}</label
+            >
+            @if (['EXACT', 'PERCENT', 'SHARES'].includes(draft['method']) && selectedParts[p.id]) {
+              <label class="split-value"
+                >{{
+                  draft['method'] === 'PERCENT'
+                    ? 'Percent'
+                    : draft['method'] === 'SHARES'
+                      ? 'Shares'
+                      : 'Amount'
+                }}<input
+                  [name]="'split-' + p.id"
+                  [(ngModel)]="splitValues[p.id]"
+                  inputmode="decimal"
+                  required
+              /></label>
+            }
+          </div>
+        }
+      </fieldset>
+      <p class="muted">
+        Rounding uses integer minor units with deterministic remainder allocation. Exact amounts
+        must add up; percentages must total 100%.
+      </p>
+    }
+    @if (['transaction', 'expense'].includes(kind)) {
+      <label
+        >Notes (optional)<textarea
+          name="notes"
+          [(ngModel)]="draft['notes']"
+          maxlength="2000"
+          rows="2"
+        ></textarea>
+      </label>
+    }
+    <div class="dialog-actions">
+      <button type="button" (click)="close()">Cancel</button
+      ><button class="primary" [disabled]="saving()">
+        {{ saving() ? 'Saving…' : 'Save ' + kind }}
+      </button>
+    </div>
+  </form>
+</dialog>
