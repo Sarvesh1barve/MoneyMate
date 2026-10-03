@@ -1,6 +1,6 @@
 # This laptop's deployed setup
 
-Verified on 2026-10-02. The frontend is published at [https://sarvesh1barve.github.io/MoneyMate/](https://sarvesh1barve.github.io/MoneyMate/). The repository default branch is `feat/self-hosted-multiuser`; the trip invitation and device sign-in update is on `feat/trip-invites-device-login` and is deployed by manually running the Pages workflow from that branch. GitHub Pages serves only the Angular build.
+Verified on 2026-10-03. The frontend is published at [https://sarvesh1barve.github.io/MoneyMate/](https://sarvesh1barve.github.io/MoneyMate/). The repository default branch is `feat/self-hosted-multiuser`; the latest trip improvements are on `feat/trip-invites-device-login` and are deployed by manually running the Pages workflow from that branch. GitHub Pages serves only the Angular build.
 
 ## Running services
 
@@ -10,7 +10,7 @@ Verified on 2026-10-02. The frontend is published at [https://sarvesh1barve.gith
 | Spring Boot production jar | `127.0.0.1:8080` | `D:\MoneyMate\backend\target\moneymate-1.0.0.jar` |
 | ngrok agent | `127.0.0.1:4040` (local status API) | Existing user ngrok configuration |
 
-PostgreSQL binaries are in `D:\MoneyMate\.tools\postgresql-17.11\pgsql\bin`. This is a native local cluster, not a Windows service or a disposable test database. Database `moneymate` is owned by the restricted `moneymate` role. Three Flyway migrations have been applied. Test users/data have not been copied into production.
+PostgreSQL binaries are in `D:\MoneyMate\.tools\postgresql-17.11\pgsql\bin`. This is a native local cluster, not a Windows service or a disposable test database. Database `moneymate` is owned by the restricted `moneymate` role. Four Flyway migrations have been applied. Test users/data have not been copied into production.
 
 The ignored `backend\.env` holds database connection settings. The ignored `.local\postgres-admin.secret` holds the generated database administrator password. These files and the local data directory have restricted Windows permissions and must not be committed or shared. Credentials were generated randomly; the frontend receives only the public API origin. SCRAM-SHA-256 protects PostgreSQL password authentication. Database files and browser caches are not application-encrypted.
 

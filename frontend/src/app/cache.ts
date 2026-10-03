@@ -70,6 +70,7 @@ export class Cache {
         version: 1,
         deleted: false,
         body: { name: entry.body['ownerName'] },
+        createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
       };
       await tx

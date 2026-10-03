@@ -314,6 +314,7 @@ export class Store {
     const user = this.user();
     if (!user) throw Error('Sign in before creating your workspace.');
     validate(kind, body);
+    const now = new Date().toISOString();
     const entry: Entry = {
       id: existing?.id || crypto.randomUUID(),
       kind,
@@ -322,7 +323,8 @@ export class Store {
       version: existing?.version || 0,
       deleted: false,
       body: structuredClone(body),
-      updatedAt: new Date().toISOString(),
+      createdAt: existing?.createdAt || existing?.updatedAt || now,
+      updatedAt: now,
     };
     await this.cache.save(user, entry);
     await this.load();

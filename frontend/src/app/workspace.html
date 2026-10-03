@@ -702,17 +702,61 @@
             </div>
           }
           @if (tripTab() === 'expenses') {
-            <section class="card">
-              @for (e of tripRows('expense'); track e.id) {
+            <section class="card trip-expense-list">
+              <div class="filters trip-expense-filters">
+                <label class="search-label"
+                  >Search expenses<input
+                    [(ngModel)]="tripExpenseSearch"
+                    placeholder="Description or notes"
+                /></label>
+                <label
+                  >Paid by<select [(ngModel)]="tripExpensePayer">
+                    <option value="">Everyone</option>
+                    @for (p of tripRows('participant'); track p.id) {
+                      <option [value]="p.id">{{ p.body['name'] }}</option>
+                    }
+                  </select></label
+                >
+                <label
+                  >Sort<select [(ngModel)]="tripExpenseSort">
+                    <option value="added-newest">Recently added</option>
+                    <option value="added-oldest">First added</option>
+                    <option value="date-newest">Expense date: newest</option>
+                    <option value="date-oldest">Expense date: oldest</option>
+                    <option value="amount-highest">Amount: highest</option>
+                    <option value="amount-lowest">Amount: lowest</option>
+                  </select></label
+                >
+              </div>
+              <details class="more-filters">
+                <summary>Filter by expense date</summary>
+                <div class="form-grid">
+                  <label>From<input type="date" [(ngModel)]="tripExpenseFrom" /></label>
+                  <label>To<input type="date" [(ngModel)]="tripExpenseTo" /></label>
+                </div>
+              </details>
+              @if (tripRows('expense').length) {
+                <div class="trip-expense-count">
+                  Showing {{ tripExpenses().length }} of {{ tripRows('expense').length }} expenses
+                  <button class="small" (click)="clearTripExpenseFilters()">Clear filters</button>
+                </div>
+              }
+              @for (e of tripExpenses(); track e.id) {
                 <div class="transaction-row">
                   <span class="transaction-icon">↗</span>
                   <div class="row-main">
                     <strong>{{ e.body['description'] }}</strong
                     ><small
-                      >{{ e.body['date'] }} · Paid by {{ label(e.body['payerId']) }} ·
+                      >Expense date {{ e.body['date'] }} · Paid by {{ label(e.body['payerId']) }} ·
                       {{ splitDescription(e.body['method']) }}
                       @if (pending(e.id)) {
                         · Pending
+                      }
+                    </small>
+                    <small class="expense-added"
+                      >Added {{ e.createdAt || e.updatedAt | date: 'd MMM y, h:mm a' }}
+                      @if (pending(e.id)) {
+                        · waiting to sync
                       }
                     </small>
                     <details>
@@ -744,9 +788,15 @@
                 </div>
               } @empty {
                 <div class="empty">
-                  <h3>The first shared memory.</h3>
-                  <p>Add an expense to start splitting fairly.</p>
-                  <button (click)="open('expense')">Add expense</button>
+                  @if (tripRows('expense').length) {
+                    <h3>No matching expenses.</h3>
+                    <p>Try another search, payer, or expense date.</p>
+                    <button (click)="clearTripExpenseFilters()">Clear filters</button>
+                  } @else {
+                    <h3>The first shared memory.</h3>
+                    <p>Add an expense to start splitting fairly.</p>
+                    <button (click)="open('expense')">Add expense</button>
+                  }
                 </div>
               }
             </section>

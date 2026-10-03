@@ -42,7 +42,7 @@ All routes are under `/api`. JSON only. Authenticated routes require `Authorizat
 }
 ```
 
-`baseVersion: 0` creates; updates use the last accepted/expected version. The server derives owner ID. The response includes `id,kind,ownerId,tripId,version,deleted,body,updatedAt`. A new operation ID is required for a distinct write. A retry must preserve its exact payload. 409 version conflicts contain the permitted current record in `detail`. 403 indicates missing/revoked authorization. Network errors are distinct from 401 session expiry. The client keeps drafts for both.
+`baseVersion: 0` creates; updates use the last accepted/expected version. The server derives owner ID. The response includes `id,kind,ownerId,tripId,version,deleted,body,createdAt,updatedAt`. `createdAt` is server-assigned and remains unchanged on edits; `updatedAt` changes on edits. A new operation ID is required for a distinct write. A retry must preserve its exact payload. 409 version conflicts contain the permitted current record in `detail`. 403 indicates missing/revoked authorization. Network errors are distinct from 401 session expiry. The client keeps drafts for both.
 
 ## Bodies
 

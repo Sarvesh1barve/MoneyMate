@@ -1,5 +1,11 @@
 # Local verification report
 
+## Trip expense ordering and filters: 2026-10-03
+
+The Expenses tab now defaults to newest **addition** time, shows the local date and time each expense was added, and separates that from the expense's chosen calendar date. Search, payer, inclusive expense-date filters, and added-time/date/amount sorting work together. The list does not change its addition order when an expense is edited. A new server `created_at` column is immutable; migration V4 reconstructs earlier expense times from creation activity when available, otherwise uses their last known update timestamp. Pending offline entries show their local addition time until the authoritative server creation time arrives.
+
+`npm.cmd test` passed **20/20** frontend tests; `backend\mvnw.cmd -q test` passed **20/20** tests (15 integration and 5 money) with disposable PostgreSQL and all four migrations. `npm.cmd run build:pages` passed. The 390 × 844 Chromium flow passed with two expenses: it checked default newest-added order, displayed added time, alternate expense-date order, payer/search/date filters, and the prior invite/split/remembered-sign-in/passkey flow. A custom-format backup of the production database was created before V4 and its archive catalog was readable; a full restore is still untested. Physical iPhone layout and time-zone display have not been tested.
+
 ## Trip and sign-in update: 2026-10-02
 
 On the new `feat/trip-invites-device-login` branch, `npm.cmd test` passed **17/17** frontend tests and `npm.cmd run build:pages` built the `/MoneyMate/` bundle. `backend\mvnw.cmd -q test` passed **19/19** tests against disposable native PostgreSQL, including a general single-use invitation, remembered-device challenge replay/revocation, and real WebAuthn registration/assertion/replay/revocation. A 390 × 844 Chromium browser test passed: two trips could be created, a link opened in a second account and joined automatically, a ₹100 equal-split expense displayed “Bob pays Alice ₹50”, the remembered session survived reload, and a virtual platform passkey signed in after logout. The original comprehensive two-user/offline browser test also passed against the updated backend.

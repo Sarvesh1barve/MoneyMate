@@ -6,6 +6,7 @@ import { Store } from './store';
 import { Body, Entry, Kind, Pending, Transfer } from './models';
 import * as finance from './finance';
 import { invitationLink, invitationToken } from './invitations';
+import { TripExpenseSort, visibleTripExpenses } from './trip-expenses';
 
 @Component({
   selector: 'mm-workspace',
@@ -23,6 +24,11 @@ export class Workspace {
   readonly formError = signal('');
   readonly selectedTrip = signal('');
   readonly tripTab = signal('overview');
+  tripExpenseSearch = '';
+  tripExpensePayer = '';
+  tripExpenseFrom = '';
+  tripExpenseTo = '';
+  tripExpenseSort: TripExpenseSort = 'added-newest';
   readonly saving = signal(false);
   readonly nav = [
     { id: 'home', label: 'Home', icon: '◈' },
@@ -171,6 +177,21 @@ export class Workspace {
   }
   tripRows(kind: string) {
     return this.rows(kind).filter((e) => e.tripId === this.trip()?.id);
+  }
+  tripExpenses() {
+    return visibleTripExpenses(this.tripRows('expense'), {
+      search: this.tripExpenseSearch,
+      payerId: this.tripExpensePayer,
+      fromDate: this.tripExpenseFrom,
+      toDate: this.tripExpenseTo,
+      sort: this.tripExpenseSort,
+    });
+  }
+  clearTripExpenseFilters() {
+    this.tripExpenseSearch = '';
+    this.tripExpensePayer = '';
+    this.tripExpenseFrom = '';
+    this.tripExpenseTo = '';
   }
   tripTotal() {
     return this.tripRows('expense').reduce((s, e) => s + e.body['amount'], 0);
@@ -384,6 +405,8 @@ export class Workspace {
   selectTrip(id: string) {
     this.selectedTrip.set(id);
     this.invitation = '';
+    this.clearTripExpenseFilters();
+    this.tripExpenseSort = 'added-newest';
     void this.router.navigate(['/trips'], { queryParams: { trip: id }, replaceUrl: true });
   }
   async invite(participant: string | null = null) {

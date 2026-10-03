@@ -230,6 +230,26 @@ class IntegrationTest {
   }
 
   @Test
+  void expenseCreationTimeSurvivesEditsAndIsReturnedInSnapshots() throws Exception {
+    UUID[] t = trip();
+    var initial = expense(t, t[1], 10000);
+    var created = postJson("/sync", initial, a, 200);
+    String createdAt = created.path("createdAt").asText();
+    assertFalse(createdAt.isBlank());
+    var changed = initial.body().deepCopy().put("description", "Dinner corrected");
+    var edited = postJson("/sync", op("expense", initial.id(), t[0], 1, changed), a, 200);
+    assertEquals(createdAt, edited.path("createdAt").asText());
+    assertEquals(createdAt, records.find(initial.id()).createdAt());
+    boolean found = false;
+    for (JsonNode record : sync(a).path("records"))
+      if (record.path("id").asText().equals(initial.id().toString())) {
+        assertEquals(createdAt, record.path("createdAt").asText());
+        found = true;
+      }
+    assertTrue(found);
+  }
+
+  @Test
   void authenticationAndCors() throws Exception {
     mvc.perform(get("/api/sync")).andExpect(status().isUnauthorized());
     mvc.perform(get("/api/me").header("Authorization", "Bearer " + a.token()))
