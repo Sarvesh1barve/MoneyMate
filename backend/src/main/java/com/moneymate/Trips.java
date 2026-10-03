@@ -21,6 +21,7 @@ public class Trips {
     records.lockUser(user);
     records.lockTrip(trip);
     records.owner(trip, user);
+    if (participant != null) {
     var p = records.reference(participant, "participant", user, trip);
     ApiError.require(!p.deleted(), "Participant is inactive.");
     ApiError.require(
@@ -40,6 +41,7 @@ public class Trips {
                 + " is null",
             trip,
             participant);
+    }
     String token = auth.secret();
     Instant expiry = Instant.now().plusSeconds(86400);
     records
@@ -64,25 +66,38 @@ public class Trips {
         records
             .database()
             .queryForList(
-                "select trip_id,participant_id from invitation where token_hash=? and used_at is"
-                    + " null and expires_at>now()",
+                "select trip_id,participant_id,accepted_by,used_at from invitation where token_hash=? and expires_at>now()",
                 Auth.hash(token));
     if (invite.isEmpty()) throw new ApiError(400, "Invalid or expired invitation.");
     UUID trip = (UUID) invite.getFirst().get("trip_id"),
         participant = (UUID) invite.getFirst().get("participant_id");
     records.lockTrip(trip);
-    ApiError.require(records.member(trip, user) == null, "You already belong to this trip.");
-    ApiError.require(
+    // Re-read under the trip lock: two users must never consume the same invitation.
+    var current = records.database().queryForMap("select * from invitation where token_hash=?", Auth.hash(token));
+    if (current.get("used_at") != null) {
+      if (user.equals(current.get("accepted_by")) && records.member(trip, user) != null)
+        return Map.of("tripId", trip);
+      throw new ApiError(400, "Invalid or expired invitation.");
+    }
+    // Existing members can open a fresh link without spending somebody else's invitation.
+    if (records.member(trip, user) != null) return Map.of("tripId", trip);
+    if (participant != null) ApiError.require(
         !records.reference(participant, "participant", user, trip).deleted(),
         "Participant is inactive.");
     int used =
         records
             .database()
             .update(
-                "update invitation set used_at=now() where token_hash=? and used_at is null and"
+                "update invitation set used_at=now(),accepted_by=? where token_hash=? and used_at is null and"
                     + " expires_at>now()",
-                Auth.hash(token));
+                user, Auth.hash(token));
     ApiError.require(used == 1, "Invalid or expired invitation.");
+    if (participant == null) {
+      participant = UUID.randomUUID();
+      records.database().update("insert into record(id,kind,owner_id,trip_id,version,body) values (?,'participant',?,?,1,jsonb_build_object('name',cast(? as text)))",
+          participant, records.find(trip).ownerId(), trip, auth.user(user).name());
+      records.database().update("update invitation set participant_id=? where token_hash=?", participant, Auth.hash(token));
+    }
     records
         .database()
         .update(

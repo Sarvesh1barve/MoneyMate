@@ -21,6 +21,7 @@ const entry = (kind: string, id: string, body: any, tripId: string | null = null
   body,
   version: 1,
   deleted: false,
+  createdAt: '',
   updatedAt: '',
 });
 test('minor units preserve precision and currencies', () => {

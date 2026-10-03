@@ -22,6 +22,7 @@ public class Records {
       long version,
       boolean deleted,
       JsonNode body,
+      String createdAt,
       String updatedAt) {}
 
   public record Operation(
@@ -69,6 +70,7 @@ public class Records {
         r.getLong("version"),
         r.getBoolean("deleted"),
         parse(r.getString("body")),
+        r.getTimestamp("created_at").toInstant().toString(),
         r.getTimestamp("updated_at").toInstant().toString());
   }
 

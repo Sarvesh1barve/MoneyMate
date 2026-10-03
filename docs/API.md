@@ -8,12 +8,18 @@ All routes are under `/api`. JSON only. Authenticated routes require `Authorizat
 | POST | `/auth/register` | `{email,password,name}`; returns token, user, expiry |
 | POST | `/auth/login` | `{email,password}`; same session response |
 | POST | `/auth/logout` | Revokes current bearer token |
+| POST | `/auth/devices` | Authenticated recent sign-in; register P-256 device public key, maximum 10 per user |
+| GET/DELETE | `/auth/devices`, `/auth/devices/{id}` | List or revoke only owned remembered devices |
+| POST | `/auth/device/challenge`, `/auth/device/verify` | Public two-step signed challenge, one-time and origin-bound; returns 30-minute session |
+| POST | `/auth/passkeys/options`, `/auth/passkeys` | Authenticated recent sign-in; start and finish WebAuthn registration |
+| GET/DELETE | `/auth/passkeys`, `/auth/passkeys/{id}` | List or revoke only owned passkeys |
+| POST | `/auth/passkey/options`, `/auth/passkey/verify` | Public two-step WebAuthn sign-in; returns 30-minute session |
 | GET | `/me` | Current `{id,email,name}` |
 | GET | `/sync` | Authorized snapshot: records, members, activity, server time |
 | POST | `/sync` | Atomic idempotent versioned write |
 | GET | `/trips/{trip}/suggestions` | Server-calculated transfers, members only |
-| POST | `/trips/{trip}/invitations` | Owner only; `{participantId}` → one-time token and expiry |
-| POST | `/invitations/join` | Authenticated `{token}`; links that account to its participant |
+| POST | `/trips/{trip}/invitations` | Owner only; `{participantId}` for a named participant or `{participantId:null}` for a new member → one-time token and expiry |
+| POST | `/invitations/join` | Authenticated `{token}`; atomically links that account to the named participant or creates one, returning `tripId` |
 | DELETE | `/trips/{trip}/members/{user}` | Owner only; revoke non-owner membership |
 
 ## Sync envelope
@@ -36,7 +42,7 @@ All routes are under `/api`. JSON only. Authenticated routes require `Authorizat
 }
 ```
 
-`baseVersion: 0` creates; updates use the last accepted/expected version. The server derives owner ID. The response includes `id,kind,ownerId,tripId,version,deleted,body,updatedAt`. A new operation ID is required for a distinct write. A retry must preserve its exact payload. 409 version conflicts contain the permitted current record in `detail`. 403 indicates missing/revoked authorization. Network errors are distinct from 401 session expiry. The client keeps drafts for both.
+`baseVersion: 0` creates; updates use the last accepted/expected version. The server derives owner ID. The response includes `id,kind,ownerId,tripId,version,deleted,body,createdAt,updatedAt`. `createdAt` is server-assigned and remains unchanged on edits; `updatedAt` changes on edits. A new operation ID is required for a distinct write. A retry must preserve its exact payload. 409 version conflicts contain the permitted current record in `detail`. 403 indicates missing/revoked authorization. Network errors are distinct from 401 session expiry. The client keeps drafts for both.
 
 ## Bodies
 

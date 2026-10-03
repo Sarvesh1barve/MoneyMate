@@ -33,7 +33,7 @@ class Security {
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             a ->
-                a.requestMatchers("/api/auth/login", "/api/auth/register", "/api/health")
+                a.requestMatchers("/api/auth/login", "/api/auth/register", "/api/health", "/api/auth/device/challenge", "/api/auth/device/verify", "/api/auth/passkey/options", "/api/auth/passkey/verify")
                     .permitAll()
                     .anyRequest()
                     .authenticated())

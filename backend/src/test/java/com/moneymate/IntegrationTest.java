@@ -7,8 +7,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.upokecenter.cbor.CBORObject;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import java.util.*;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.*;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECGenParameterSpec;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -72,6 +78,89 @@ class IntegrationTest {
     if (session != null) req.header("Authorization", "Bearer " + session.token());
     MvcResult result = mvc.perform(req).andExpect(status().is(status)).andReturn();
     return json.readTree(result.getResponse().getContentAsString());
+  }
+
+  JsonNode postOrigin(String path, Object body, Auth.Session session, int expected) throws Exception {
+    var request = post("/api" + path).contentType("application/json").header("Origin", "https://sarvesh1barve.github.io")
+        .content(json.writeValueAsBytes(body));
+    if (session != null) request.header("Authorization", "Bearer " + session.token());
+    var result = mvc.perform(request).andReturn();
+    if (result.getResponse().getStatus() != expected)
+      throw new AssertionError(path + " returned " + result.getResponse().getStatus() + ": " + result.getResponse().getContentAsString() + " / " + result.getResolvedException());
+    return json.readTree(result.getResponse().getContentAsString());
+  }
+
+  static String b64(byte[] bytes) { return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }
+  static byte[] sha(byte[] bytes) { try { return MessageDigest.getInstance("SHA-256").digest(bytes); } catch (GeneralSecurityException e) { throw new IllegalStateException(e); } }
+
+  @Test
+  void generalInvitationCreatesParticipantAndGrantsOnlyThatTrip() throws Exception {
+    UUID[] first = trip(), second = trip();
+    int prior = records.database().queryForObject("select count(*) from record where trip_id=? and kind='participant'", Integer.class, first[0]);
+    String token = postJson("/trips/" + first[0] + "/invitations", body("participantId", null), a, 200).path("token").asText();
+    postJson("/invitations/join", body("token", token), c, 200);
+    assertEquals(prior + 1, records.database().queryForObject("select count(*) from record where trip_id=? and kind='participant'", Integer.class, first[0]));
+    assertTrue(sync(c).toString().contains(first[0].toString()));
+    assertFalse(sync(c).toString().contains(second[0].toString()));
+    postJson("/invitations/join", body("token", token), c, 200);
+    postJson("/invitations/join", body("token", token), b, 400);
+    mvc.perform(delete("/api/trips/" + first[0] + "/members/" + c.user().id()).header("Authorization", "Bearer " + a.token()))
+       .andExpect(status().isOk());
+    assertFalse(sync(c).toString().contains(first[0].toString()));
+    postJson("/invitations/join", body("token", token), c, 400);
+  }
+
+  @Test
+  void rememberedDeviceUsesSignedSingleUseChallengesAndCanBeRevoked() throws Exception {
+    Auth.Session fresh = auth.login(new Auth.Credentials("alice@test.invalid", "A-long-test-password!", "Alice"));
+    var generator = KeyPairGenerator.getInstance("EC"); generator.initialize(new ECGenParameterSpec("secp256r1"));
+    var key = generator.generateKeyPair(); UUID id = UUID.randomUUID();
+    postOrigin("/auth/devices", body("id", id, "publicKey", b64(key.getPublic().getEncoded()), "name", "Test phone"), fresh, 200);
+    var challenge = postOrigin("/auth/device/challenge", body("deviceId", id), null, 200);
+    var signer = Signature.getInstance("SHA256withECDSAinP1363Format"); signer.initSign(key.getPrivate());
+    signer.update(challenge.path("challenge").asText().getBytes(StandardCharsets.UTF_8));
+    var proof = body("deviceId", id, "challengeId", challenge.path("challengeId").asText(), "signature", b64(signer.sign()));
+    var session = postOrigin("/auth/device/verify", proof, null, 200);
+    assertEquals(a.user().id().toString(), session.path("user").path("id").asText());
+    postOrigin("/auth/device/verify", proof, null, 401);
+    postOrigin("/auth/passkeys/options", body(), new Auth.Session(session.path("token").asText(), a.user(), java.time.Instant.now()), 403);
+    mvc.perform(delete("/api/auth/devices/" + id).header("Authorization", "Bearer " + fresh.token()))
+      .andExpect(status().isOk());
+    postOrigin("/auth/device/challenge", body("deviceId", id), null, 401);
+    mvc.perform(get("/api/me").header("Authorization", "Bearer " + session.path("token").asText()))
+      .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void passkeyCeremoniesRequireVerifiedDeviceAndRejectReplay() throws Exception {
+    Auth.Session fresh = auth.login(new Auth.Credentials("alice@test.invalid", "A-long-test-password!", "Alice"));
+    var generator = KeyPairGenerator.getInstance("EC"); generator.initialize(new ECGenParameterSpec("secp256r1"));
+    var key = generator.generateKeyPair();
+    var registration = postOrigin("/auth/passkeys/options", body(), fresh, 200);
+    String id = b64(sha(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8)));
+    var ec = (ECPublicKey) key.getPublic();
+    byte[] x = Arrays.copyOfRange(ec.getW().getAffineX().toByteArray(), Math.max(0, ec.getW().getAffineX().toByteArray().length-32), ec.getW().getAffineX().toByteArray().length);
+    byte[] y = Arrays.copyOfRange(ec.getW().getAffineY().toByteArray(), Math.max(0, ec.getW().getAffineY().toByteArray().length-32), ec.getW().getAffineY().toByteArray().length);
+    CBORObject cose = CBORObject.NewMap().Add(1,2).Add(3,-7).Add(-1,1).Add(-2,x).Add(-3,y);
+    byte[] rp = sha("sarvesh1barve.github.io".getBytes(StandardCharsets.UTF_8));
+    var authData = ByteBuffer.allocate(32+1+4+16+2+32+cose.EncodeToBytes().length);
+    authData.put(rp).put((byte)0x45).putInt(0).put(new byte[16]).putShort((short)32).put(Base64.getUrlDecoder().decode(id)).put(cose.EncodeToBytes());
+    byte[] client = json.writeValueAsBytes(body("type", "webauthn.create", "challenge", registration.path("options").path("publicKey").path("challenge").asText(), "origin", "https://sarvesh1barve.github.io", "crossOrigin", false));
+    byte[] attestation = CBORObject.NewMap().Add("fmt", "none").Add("attStmt", CBORObject.NewMap()).Add("authData", authData.array()).EncodeToBytes();
+    var credential = body("id", id, "rawId", id, "type", "public-key", "response", body("clientDataJSON", b64(client), "attestationObject", b64(attestation), "transports", List.of("internal")), "clientExtensionResults", body());
+    postOrigin("/auth/passkeys", body("challengeId", registration.path("challengeId").asText(), "credential", credential, "name", "Test biometric"), fresh, 200);
+    var login = postOrigin("/auth/passkey/options", body(), null, 200);
+    byte[] data = ByteBuffer.allocate(37).put(rp).put((byte)0x05).putInt(1).array();
+    byte[] loginClient = json.writeValueAsBytes(body("type", "webauthn.get", "challenge", login.path("options").path("publicKey").path("challenge").asText(), "origin", "https://sarvesh1barve.github.io", "crossOrigin", false));
+    var signer = Signature.getInstance("SHA256withECDSA"); signer.initSign(key.getPrivate());
+    signer.update(data); signer.update(sha(loginClient));
+    var assertion = body("id", id, "rawId", id, "type", "public-key", "response", body("clientDataJSON", b64(loginClient), "authenticatorData", b64(data), "signature", b64(signer.sign()), "userHandle", b64(a.user().id().toString().getBytes(StandardCharsets.UTF_8))), "clientExtensionResults", body());
+    var proof = body("challengeId", login.path("challengeId").asText(), "credential", assertion);
+    assertEquals(a.user().id().toString(), postOrigin("/auth/passkey/verify", proof, null, 200).path("user").path("id").asText());
+    postOrigin("/auth/passkey/verify", proof, null, 401);
+    mvc.perform(delete("/api/auth/passkeys/"+id).header("Authorization", "Bearer "+fresh.token())).andExpect(status().isOk());
+    var another = postOrigin("/auth/passkey/options", body(), null, 200);
+    postOrigin("/auth/passkey/verify", body("challengeId", another.path("challengeId").asText(), "credential", assertion), null, 401);
   }
 
   JsonNode sync(Auth.Session session) throws Exception {
@@ -138,6 +227,26 @@ class IntegrationTest {
             List.of(
                 body("participantId", trip[1], "value", 1),
                 body("participantId", trip[2], "value", 1))));
+  }
+
+  @Test
+  void expenseCreationTimeSurvivesEditsAndIsReturnedInSnapshots() throws Exception {
+    UUID[] t = trip();
+    var initial = expense(t, t[1], 10000);
+    var created = postJson("/sync", initial, a, 200);
+    String createdAt = created.path("createdAt").asText();
+    assertFalse(createdAt.isBlank());
+    var changed = initial.body().deepCopy().put("description", "Dinner corrected");
+    var edited = postJson("/sync", op("expense", initial.id(), t[0], 1, changed), a, 200);
+    assertEquals(createdAt, edited.path("createdAt").asText());
+    assertEquals(createdAt, records.find(initial.id()).createdAt());
+    boolean found = false;
+    for (JsonNode record : sync(a).path("records"))
+      if (record.path("id").asText().equals(initial.id().toString())) {
+        assertEquals(createdAt, record.path("createdAt").asText());
+        found = true;
+      }
+    assertTrue(found);
   }
 
   @Test

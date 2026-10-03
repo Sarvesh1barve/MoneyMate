@@ -13,6 +13,7 @@ const entry = (id = 'record'): Entry => ({
   version: 0,
   deleted: false,
   body: { name: 'Cash', currency: 'INR', openingBalance: 0 },
+  createdAt: '',
   updatedAt: '',
 });
 test('local change and outbox persist together across cache instances', async () => {

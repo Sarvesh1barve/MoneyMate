@@ -1,6 +1,6 @@
 # This laptop's deployed setup
 
-Verified on 2026-10-02. The frontend is published at [https://sarvesh1barve.github.io/MoneyMate/](https://sarvesh1barve.github.io/MoneyMate/). Source is on the `feat/self-hosted-multiuser` branch, currently also the repository's default branch because the repository started empty. GitHub Pages serves only the Angular build.
+Verified on 2026-10-03. The frontend is published at [https://sarvesh1barve.github.io/MoneyMate/](https://sarvesh1barve.github.io/MoneyMate/). The repository default branch is `feat/self-hosted-multiuser`; the latest trip improvements are on `feat/trip-invites-device-login` and are deployed by manually running the Pages workflow from that branch. GitHub Pages serves only the Angular build.
 
 ## Running services
 
@@ -10,7 +10,7 @@ Verified on 2026-10-02. The frontend is published at [https://sarvesh1barve.gith
 | Spring Boot production jar | `127.0.0.1:8080` | `D:\MoneyMate\backend\target\moneymate-1.0.0.jar` |
 | ngrok agent | `127.0.0.1:4040` (local status API) | Existing user ngrok configuration |
 
-PostgreSQL binaries are in `D:\MoneyMate\.tools\postgresql-17.11\pgsql\bin`. This is a native local cluster, not a Windows service or a disposable test database. Database `moneymate` is owned by the restricted `moneymate` role. Both Flyway migrations have been applied. Production starts empty; test users/data have not been copied into it.
+PostgreSQL binaries are in `D:\MoneyMate\.tools\postgresql-17.11\pgsql\bin`. This is a native local cluster, not a Windows service or a disposable test database. Database `moneymate` is owned by the restricted `moneymate` role. Four Flyway migrations have been applied. Test users/data have not been copied into production.
 
 The ignored `backend\.env` holds database connection settings. The ignored `.local\postgres-admin.secret` holds the generated database administrator password. These files and the local data directory have restricted Windows permissions and must not be committed or shared. Credentials were generated randomly; the frontend receives only the public API origin. SCRAM-SHA-256 protects PostgreSQL password authentication. Database files and browser caches are not application-encrypted.
 
@@ -54,7 +54,7 @@ $apiOrigin = ($tunnels.tunnels | Where-Object {
 } | Select-Object -First 1).public_url
 if (-not $apiOrigin) { throw 'No HTTPS tunnel forwarding to port 8080 was found.' }
 gh variable set MONEYMATE_API_URL --repo Sarvesh1barve/MoneyMate --body $apiOrigin
-gh workflow run pages.yml --repo Sarvesh1barve/MoneyMate --ref feat/self-hosted-multiuser
+gh workflow run pages.yml --repo Sarvesh1barve/MoneyMate --ref feat/trip-invites-device-login
 gh run list --repo Sarvesh1barve/MoneyMate --workflow pages.yml --limit 3
 ```
 

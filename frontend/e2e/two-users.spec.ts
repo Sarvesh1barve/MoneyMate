@@ -2,10 +2,12 @@ import { test, expect, Page } from '@playwright/test';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 const password = 'MoneyMate-test-password!';
-const marker = path.resolve('../.local/pause-api');
+const testPort = process.env['MM_TEST_PORT'] || '8080';
+const apiOrigin = `http://localhost:${testPort}`;
+const marker = path.resolve(`../.local/pause-api-${testPort}`);
 async function register(page: Page, email: string, name: string) {
   await page.goto('./');
-  await page.getByLabel('API endpoint', { exact: true }).fill('http://localhost:8080');
+  await page.getByLabel('API endpoint', { exact: true }).fill(apiOrigin);
   await page.getByRole('button', { name: 'Save endpoint', exact: true }).click();
   await page.getByRole('button', { name: 'New here? Create an account' }).click();
   await page.getByLabel('Your name', { exact: true }).fill(name);
@@ -118,7 +120,7 @@ test('two users, private money, shared trip, revocation, real server interruptio
     .poll(
       async () => {
         try {
-          await fetch('http://localhost:8080/api/health');
+          await fetch(`${apiOrigin}/api/health`);
           return false;
         } catch {
           return true;
@@ -140,7 +142,7 @@ test('two users, private money, shared trip, revocation, real server interruptio
     .poll(
       async () => {
         try {
-          return (await fetch('http://localhost:8080/api/health')).ok;
+          return (await fetch(`${apiOrigin}/api/health`)).ok;
         } catch {
           return false;
         }

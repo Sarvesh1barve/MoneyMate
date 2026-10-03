@@ -128,6 +128,17 @@ public class Auth {
     return new Session(token, user(id), expires);
   }
 
+  void recent(String token, UUID user) {
+    if (db.queryForObject("select count(*) from auth_session where token_hash=? and user_id=? and strong_auth and created_at>now()-interval '5 minutes' and expires_at>now()", Integer.class, hash(token), user) != 1)
+      throw new ApiError(403, "Sign in again with your password or passkey before changing sign-in methods.");
+  }
+
+  Session issueDevice(UUID id, UUID device) {
+    Session session = issue(id);
+    db.update("update auth_session set device_id=?,strong_auth=false where token_hash=?", device, hash(session.token()));
+    return session;
+  }
+
   public User user(UUID id) {
     return db.queryForObject(
         "select id,email,display_name from app_user where id=?",
@@ -144,7 +155,9 @@ public class Auth {
     return ids.isEmpty() ? null : ids.getFirst();
   }
 
+  @Transactional
   public void logout(String token) {
+    db.update("delete from remembered_device where id in (select device_id from auth_session where token_hash=?)", hash(token));
     db.update("delete from auth_session where token_hash=?", hash(token));
   }
 

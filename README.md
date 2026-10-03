@@ -8,9 +8,9 @@ An Angular PWA for private personal finances and shared trips, backed by Spring 
 
 ## What is implemented
 
-- Email/password registration and login, BCrypt password hashing, 30-minute bearer sessions, rate limits, logout, `/api/me`, strict CORS, and server-side ownership checks.
+- Email/password registration and login, BCrypt password hashing, 30-minute bearer sessions, optional remembered sign-in for 30 days with a browser-held non-extractable key, optional passkeys for device verification, rate limits, logout, `/api/me`, strict CORS, and server-side ownership checks.
 - Private income, expenses, transfers, optional accounts, calculated balances, default/custom categories and subcategories, fixed daily/weekly/monthly and category/trip budgets, dashboard charts, search/filter/sort/edit/duplicate/soft delete, future-dated upcoming entries, and light/dark/system themes.
-- Shared trips/groups/events/households, named participants, owner-managed single-use invitations, membership revocation, expense editing, five split methods, deterministic rounding, balances, reduced settlement suggestions, Pending/Paid/Confirmed/Cancelled records, and activity history.
+- Multiple shared trips/groups/events/households, named participants, owner-managed single-use invitations that can create a linked participant when accepted, membership revocation, expense editing, an Expenses tab with added-time order and search/payer/date filters, five split methods, deterministic rounding, plain-language “who pays whom” balances and split details, reduced settlement suggestions, Pending/Paid/Confirmed/Cancelled records, and activity history.
 - Per-user IndexedDB caches, atomic local writes/outbox, operation-ID deduplication, optimistic versions, tombstones, retained conflict drafts with explicit resolution, automatic polling/reconnect sync and Sync Now.
 - GitHub Pages `/MoneyMate/` build, installable PWA shell, mobile bottom navigation, runtime API configuration, tests and a frontend-only deployment workflow.
 
@@ -139,7 +139,7 @@ cd D:\MoneyMate
 git push -u origin feat/self-hosted-multiuser
 ```
 
-The first push made `feat/self-hosted-multiuser` the remote default branch; there is currently no `main` branch. The site was published using **Frontend to GitHub Pages → Run workflow** on the feature branch. Continue using that manual workflow until a reviewed `main` branch is established. Once `main` exists, frontend changes pushed to it trigger deployment automatically. No history was rewritten. See [operations](docs/OPERATIONS.md) for CLI deployment commands and updating the tunnel origin.
+The first push made `feat/self-hosted-multiuser` the remote default branch; there is currently no `main` branch. The trip and sign-in improvements live on `feat/trip-invites-device-login`. Publish the site using **Frontend to GitHub Pages → Run workflow** on that feature branch. Continue using that manual workflow until a reviewed `main` branch is established. Once `main` exists, frontend changes pushed to it trigger deployment automatically. No history was rewritten. See [operations](docs/OPERATIONS.md) for CLI deployment commands and updating the tunnel origin.
 
 Local production preview, including `/MoneyMate/`, manifest and service worker:
 
@@ -157,7 +157,7 @@ Open `http://localhost:4200/MoneyMate/`. Installation is offered by supporting b
 2. Configure the same API origin. Register Alice and Bob using different emails and passwords of at least 12 characters. No email is sent.
 3. Alice adds a personal expense. Sync Bob: Alice’s personal entry must not appear.
 4. Alice creates a group and adds Bob as a named participant. This alone grants no access.
-5. Alice chooses **Participants → Invite**, shares the single-use link/code manually, and Bob uses **Join a trip** after signing in.
+5. Alice chooses **Invite someone**, shares the single-use link, and Bob opens it. After signing in or registering, Bob is added to that trip automatically. The owner can also create a link for a previously named participant when they want that person's earlier share linked to an account.
 6. Alice adds ₹100 paid by Alice, split equally. Bob adds ₹40 paid by Bob, split equally. Sync both: Bob owes Alice ₹30.
 7. Stop Spring, add a ₹20 expense as Alice locally, and observe **Server unavailable** with the draft visible. Restart Spring and Sync Now: it appears exactly once for both; Bob now owes ₹40.
 8. Record a settlement as Pending, explicitly mark Paid, then confirm receipt as Alice. Only confirmation clears the balance.
@@ -165,12 +165,13 @@ Open `http://localhost:4200/MoneyMate/`. Installation is offered by supporting b
 
 ## 8. Automated browser verification
 
-The test-only launcher starts a disposable PostgreSQL cluster and Spring at localhost:8080. It has no real financial data. It watches `.local/pause-api` to let the browser test close/restart the actual Spring context while preserving PostgreSQL. Never use this launcher as your production backend.
+The test-only launcher starts a disposable PostgreSQL cluster and Spring on a separate port, `localhost:8081`. It has no real financial data. It watches `.local/pause-api-8081` to let the browser test close/restart its Spring context while preserving its PostgreSQL database. Never use this launcher as your production backend.
 
 Terminal A:
 
 ```powershell
 cd D:\MoneyMate\backend
+$env:MM_TEST_PORT='8081'
 .\mvnw.cmd test-compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java '-Dexec.mainClass=com.moneymate.BrowserTestServer' '-Dexec.classpathScope=test'
 ```
 
@@ -178,13 +179,14 @@ Terminal B, after `/api/health` responds:
 
 ```powershell
 cd D:\MoneyMate\frontend
+$env:MM_TEST_PORT='8081'
 npm.cmd ci
 npx.cmd playwright install chromium
 npm.cmd run build:pages
 npm.cmd run test:e2e
 ```
 
-The test serves the real production build under `/MoneyMate/`, opens isolated browser contexts, and checks private data, invitations, shared expenses, settlement totals, real backend interruption/restart, refresh persistence, mobile layout and the offline service-worker shell. See [verification results](docs/VERIFICATION.md) for the precise result and remaining deployment checks.
+The test serves the real production build under `/MoneyMate/`, opens isolated browser contexts, and checks private data, invitations, shared expenses, settlement totals, real test-backend interruption/restart, refresh persistence, mobile layout and the offline service-worker shell. See [verification results](docs/VERIFICATION.md) for the precise result and remaining deployment checks.
 
 ## 9. Backup and restore
 
@@ -219,6 +221,8 @@ Stop the live backend before switching its `DB_URL` to the recovered database. K
 
 ## Limitations and operational expectations
 
-This is a small laptop-hosted application, with 30-second refresh rather than instant realtime. Password recovery, email verification, automatic session renewal, recurring budgets, attachments, cross-currency conversions, and bank/payment integration are not implemented. Money supports one payer per expense; its stored payer-array model allows a later extension. Settlement suggestions reduce transfers but do not claim a globally minimal transfer count. Full snapshots and indefinitely retained tombstones/operation IDs favor safety for a small group over large-scale efficiency.
+This is a small laptop-hosted application, with 30-second refresh rather than instant realtime. Password recovery, email verification, recurring budgets, attachments, cross-currency conversions, and bank/payment integration are not implemented. Money supports one payer per expense; its stored payer-array model allows a later extension. Settlement suggestions reduce transfers but do not claim a globally minimal transfer count. Full snapshots and indefinitely retained tombstones/operation IDs favor safety for a small group over large-scale efficiency.
+
+On a personal phone or computer, select **Keep me signed in on this device for 30 days** when registering or signing in. The app stores a non-extractable device key in browser IndexedDB and uses it to obtain short-lived sessions; it does not store a bearer token in localStorage or the service worker. Sign out to remove that browser's remembered access and cached workspace. The owner can remove any remembered device or passkey in Settings. Without remembered sign-in, a page refresh or 30-minute session expiry requires password or passkey sign-in. If a tunnel URL changes, the API setting can be updated without re-registering a passkey because the passkey belongs to the Pages origin; a remembered browser key must be recreated after changing its API server. Passkeys use the device's Face ID, Touch ID, fingerprint, PIN, or screen lock as available. The backend receives a signed assertion, never biometric data. Add a passkey in Settings soon after a password or passkey sign-in. iPhone passkey behavior has not been physically tested here.
 
 GitHub Pages deployment, the persistent PostgreSQL 17.11 database, and the ngrok HTTPS health check were verified on this laptop. Remote two-device use and backup recovery remain separate operational checks; see the [verification report](docs/VERIFICATION.md). Background services do not restart automatically after Windows restarts.

@@ -17,6 +17,7 @@ export interface Entry {
   version: number;
   deleted: boolean;
   body: Body;
+  createdAt: string;
   updatedAt: string;
 }
 export interface Operation {

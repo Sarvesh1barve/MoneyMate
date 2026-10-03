@@ -49,6 +49,30 @@
     </div>
   </header>
   <main>
+    @if (s.incomingInvite()) {
+      <section class="card invite-banner" aria-label="Trip invitation">
+        <h2>{{ s.joining() ? 'Joining your trip…' : 'You have a trip invitation' }}</h2>
+        <p>
+          {{
+            s.authenticated()
+              ? 'We’ll add your account and open the trip. Your personal finances stay private.'
+              : 'Sign in or create an account below. We’ll then add you and open the trip automatically.'
+          }}
+        </p>
+        @if (s.authenticated() && !s.joining()) {
+          <button (click)="acceptInvitation()">Retry joining</button>
+        }
+        @if (s.user() && !s.authenticated()) {
+          <button (click)="authOpen = true">Sign in to join</button>
+        }
+        <button class="text-button" [disabled]="s.joining()" (click)="cancelInvitation()">
+          Dismiss invitation
+        </button>
+      </section>
+    }
+    @if (s.authNotice()) {
+      <div class="notice" role="status">{{ s.authNotice() }}</div>
+    }
     @if (notice()) {
       <div class="notice" role="status">
         {{ notice()
@@ -125,11 +149,31 @@
                 >Use at least 12 characters. Passwords are securely hashed on the server.</small
               >
             }
+            <label class="remember-option"
+              ><input type="checkbox" name="remember" [(ngModel)]="remember" />Keep me signed in on
+              this device for 30 days</label
+            >
+            <small class="muted"
+              >Choose this only on your own device. Signing out removes remembered access.</small
+            >
             <button class="primary full" [disabled]="saving() || !s.apiUrl()">
               {{ saving() ? 'Connecting…' : register ? 'Create account' : 'Sign in' }}
               <span>→</span>
             </button>
           </form>
+          @if (passkeySupported && !register) {
+            <button
+              class="full"
+              (click)="authenticatePasskey()"
+              [disabled]="saving() || !s.apiUrl()"
+            >
+              Sign in with a passkey
+            </button>
+            <small class="muted"
+              >Face ID, Touch ID, or device screen lock. Add a passkey in Settings after signing
+              in.</small
+            >
+          }
           <button class="text-button full" (click)="register = !register">
             {{ register ? 'Already have an account? Sign in' : 'New here? Create an account' }}
           </button>
@@ -497,7 +541,7 @@
             <h1>Better together.</h1>
             <p>Trips, households, events, and everything in between.</p>
           </div>
-          <button class="primary" (click)="open('trip')">＋ Create group</button>
+          <button class="primary always-visible" (click)="open('trip')">＋ Create group</button>
         </div>
         <details class="card join-card" [open]="!!joinCode">
           <summary>Have an invitation? Join a trip</summary>
@@ -509,17 +553,14 @@
             ><button [disabled]="!s.authenticated()" (click)="join()">Join trip</button>
           </div>
           <small class="muted"
-            >Sign in to accept. Each invitation links you to one named participant in one
-            trip.</small
+            >Usually you can just open the shared link. Pasting a code here is optional.</small
           >
         </details>
         @if (trip(); as trip) {
           <div class="trip-selector">
+            <button class="new-trip" (click)="open('trip')">＋ New trip</button>
             @for (t of rows('trip'); track t.id) {
-              <button
-                [class.selected]="trip.id === t.id"
-                (click)="selectedTrip.set(t.id); invitation = ''"
-              >
+              <button [class.selected]="trip.id === t.id" (click)="selectTrip(t.id)">
                 {{ t.body['name'] }}
               </button>
             }
@@ -542,11 +583,57 @@
             <div class="row-actions">
               <button (click)="summary()">Share summary ↗</button>
               @if (owner()) {
+                <button
+                  class="primary"
+                  [disabled]="inviteBusy || !s.authenticated()"
+                  (click)="invite()"
+                >
+                  {{ inviteBusy ? 'Creating link…' : 'Invite someone ↗' }}
+                </button>
                 <button (click)="open('trip', trip)">Edit group</button
                 ><button class="danger-text" (click)="remove(trip)">Delete group</button>
               }
               <button class="primary" (click)="open('expense')">＋ Add expense</button>
             </div>
+          </section>
+          @if (invitation) {
+            <section class="card invite-result">
+              <label
+                >Single-use invitation · expires in 24 hours<input readonly [value]="invitation"
+              /></label>
+              <p>
+                Send this link to one person. They open it, sign in or register, and join
+                automatically. Create another link for the next person. Existing expenses keep their
+                original split until edited.
+              </p>
+              <div class="row-actions">
+                <button class="primary" (click)="shareInvitation()">Share invitation</button
+                ><button (click)="copyInvitation()">Copy link</button>
+              </div>
+            </section>
+          }
+          <section class="card payment-summary" aria-label="Who pays whom">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">AT A GLANCE</span>
+                <h2>Who pays whom</h2>
+                <p>Based on all expenses and confirmed settlements in this trip.</p>
+              </div>
+            </div>
+            @for (transfer of suggestions(); track transfer.from + transfer.to) {
+              <div class="payment-line">
+                <span
+                  ><strong>{{ label(transfer.from) }}</strong> pays
+                  <strong>{{ label(transfer.to) }}</strong></span
+                ><strong>{{ amount(transfer.amount, tripCurrency()) }}</strong>
+              </div>
+            } @empty {
+              <p class="muted">Everyone is settled up. Add an expense to see who should pay.</p>
+            }
+            <small class="muted"
+              >These are suggested payments. Sharing a summary or opening a payment app does not
+              mark anything paid.</small
+            >
           </section>
           <div class="tabs" role="tablist">
             @for (
@@ -568,8 +655,8 @@
               <section class="card">
                 <h2>Everyone’s balance</h2>
                 <p class="muted">
-                  Positive = receives money. Negative = owes money. Only confirmed settlements
-                  change balances.
+                  “To receive” means others owe this person. “To pay” means this person owes others.
+                  Only confirmed settlements change balances.
                 </p>
                 @for (b of balances(); track b.id) {
                   <div class="transaction-row">
@@ -582,7 +669,7 @@
                       >
                     </div>
                     <strong [class.positive]="b.net >= 0" [class.expense-color]="b.net < 0">{{
-                      amount(b.net, tripCurrency())
+                      balanceSentence(b.net)
                     }}</strong>
                   </div>
                 }
@@ -593,7 +680,10 @@
                 @for (t of suggestions(); track t.from + t.to) {
                   <div class="settlement-suggestion">
                     <strong>{{ label(t.from) }} → {{ label(t.to) }}</strong>
-                    <div>{{ amount(t.amount, tripCurrency()) }}</div>
+                    <div>
+                      {{ label(t.from) }} pays {{ label(t.to) }}
+                      {{ amount(t.amount, tripCurrency()) }}
+                    </div>
                     <button
                       class="small"
                       [disabled]="settlementExists(t)"
@@ -612,25 +702,80 @@
             </div>
           }
           @if (tripTab() === 'expenses') {
-            <section class="card">
-              @for (e of tripRows('expense'); track e.id) {
+            <section class="card trip-expense-list">
+              <div class="filters trip-expense-filters">
+                <label class="search-label"
+                  >Search expenses<input
+                    [(ngModel)]="tripExpenseSearch"
+                    placeholder="Description or notes"
+                /></label>
+                <label
+                  >Paid by<select [(ngModel)]="tripExpensePayer">
+                    <option value="">Everyone</option>
+                    @for (p of tripRows('participant'); track p.id) {
+                      <option [value]="p.id">{{ p.body['name'] }}</option>
+                    }
+                  </select></label
+                >
+                <label
+                  >Sort<select [(ngModel)]="tripExpenseSort">
+                    <option value="added-newest">Recently added</option>
+                    <option value="added-oldest">First added</option>
+                    <option value="date-newest">Expense date: newest</option>
+                    <option value="date-oldest">Expense date: oldest</option>
+                    <option value="amount-highest">Amount: highest</option>
+                    <option value="amount-lowest">Amount: lowest</option>
+                  </select></label
+                >
+              </div>
+              <details class="more-filters">
+                <summary>Filter by expense date</summary>
+                <div class="form-grid">
+                  <label>From<input type="date" [(ngModel)]="tripExpenseFrom" /></label>
+                  <label>To<input type="date" [(ngModel)]="tripExpenseTo" /></label>
+                </div>
+              </details>
+              @if (tripRows('expense').length) {
+                <div class="trip-expense-count">
+                  Showing {{ tripExpenses().length }} of {{ tripRows('expense').length }} expenses
+                  <button class="small" (click)="clearTripExpenseFilters()">Clear filters</button>
+                </div>
+              }
+              @for (e of tripExpenses(); track e.id) {
                 <div class="transaction-row">
                   <span class="transaction-icon">↗</span>
                   <div class="row-main">
                     <strong>{{ e.body['description'] }}</strong
                     ><small
-                      >{{ e.body['date'] }} · Paid by {{ label(e.body['payerId']) }} ·
-                      {{ e.body['method'] }}
+                      >Expense date {{ e.body['date'] }} · Paid by {{ label(e.body['payerId']) }} ·
+                      {{ splitDescription(e.body['method']) }}
                       @if (pending(e.id)) {
                         · Pending
                       }
                     </small>
+                    <small class="expense-added"
+                      >Added {{ e.createdAt || e.updatedAt | date: 'd MMM y, h:mm a' }}
+                      @if (pending(e.id)) {
+                        · waiting to sync
+                      }
+                    </small>
                     <details>
-                      <summary>Split details</summary>
+                      <summary>Who owes what for this expense?</summary>
+                      <p class="muted">
+                        {{ label(e.body['payerId']) }} paid
+                        {{ amount(e.body['amount'], tripCurrency()) }} upfront. Each person's share:
+                      </p>
                       @for (p of e.body['allocations']; track p.participantId) {
                         <div class="split-detail">
                           {{ label(p.participantId) }}
-                          <strong>{{ amount(p.amount, tripCurrency()) }}</strong>
+                          <strong
+                            >{{ amount(p.amount, tripCurrency())
+                            }}{{
+                              p.participantId === e.body['payerId']
+                                ? ' · own share'
+                                : ' · owes ' + label(e.body['payerId'])
+                            }}</strong
+                          >
                         </div>
                       }
                     </details>
@@ -643,9 +788,15 @@
                 </div>
               } @empty {
                 <div class="empty">
-                  <h3>The first shared memory.</h3>
-                  <p>Add an expense to start splitting fairly.</p>
-                  <button (click)="open('expense')">Add expense</button>
+                  @if (tripRows('expense').length) {
+                    <h3>No matching expenses.</h3>
+                    <p>Try another search, payer, or expense date.</p>
+                    <button (click)="clearTripExpenseFilters()">Clear filters</button>
+                  } @else {
+                    <h3>The first shared memory.</h3>
+                    <p>Add an expense to start splitting fairly.</p>
+                    <button (click)="open('expense')">Add expense</button>
+                  }
                 </div>
               }
             </section>
@@ -660,18 +811,13 @@
                   </p>
                 </div>
                 @if (owner()) {
-                  <button (click)="open('participant')">＋ Add participant</button>
+                  <div class="row-actions">
+                    <button [disabled]="inviteBusy || !s.authenticated()" (click)="invite()">
+                      Invite someone ↗</button
+                    ><button (click)="open('participant')">＋ Add participant</button>
+                  </div>
                 }
               </div>
-              @if (invitation) {
-                <div class="invite-result">
-                  <label
-                    >Single-use invitation · expires in 24 hours<input
-                      readonly
-                      [value]="invitation" /></label
-                  ><button (click)="shareInvitation()">Share invitation</button>
-                </div>
-              }
               @for (p of tripRows('participant'); track p.id) {
                 <div class="transaction-row">
                   <span class="avatar">{{ p.body['name'].charAt(0) }}</span>
@@ -894,6 +1040,64 @@
                 </div>
                 <button class="small" (click)="open('category', c)">Edit</button
                 ><button class="small danger-text" (click)="remove(c)">Delete</button>
+              </div>
+            }
+          </section>
+          <section class="card">
+            <h2>Sign-in & devices</h2>
+            <p>
+              {{
+                s.remembered()
+                  ? 'This browser remembers your sign-in for up to 30 days.'
+                  : 'This browser uses a temporary sign-in. To remember it, sign in again and select “Keep me signed in”.'
+              }}
+            </p>
+            <p>
+              Passkeys let your device verify you with Face ID, Touch ID, fingerprint, or its screen
+              lock. MoneyMate never receives your biometric data.
+            </p>
+            <label
+              >Passkey name<input
+                [(ngModel)]="passkeyName"
+                maxlength="80"
+                placeholder="e.g. My iPhone"
+            /></label>
+            <div class="row-actions">
+              <button
+                [disabled]="!passkeySupported || !s.authenticated() || saving()"
+                (click)="addPasskey()"
+              >
+                Add a passkey</button
+              ><button [disabled]="!s.authenticated()" (click)="actionLoadSignInMethods()">
+                Show sign-in methods</button
+              ><button (click)="authOpen = true">Sign in again</button>
+            </div>
+            <small class="muted"
+              >Adding a method requires a password or passkey sign-in within the last five minutes.
+              Your device chooses the available verification method.</small
+            >
+            @for (key of s.passkeys(); track key.id) {
+              <div class="transaction-row">
+                <div class="row-main">
+                  <strong>{{ key.name }}</strong
+                  ><small>Passkey · {{ key.rp_id }}</small>
+                </div>
+                <button class="danger-text" (click)="removeSignInMethod('passkeys', key.id)">
+                  Remove passkey
+                </button>
+              </div>
+            }
+            @for (device of s.devices(); track device.id) {
+              <div class="transaction-row">
+                <div class="row-main">
+                  <strong>{{ device.name }}</strong
+                  ><small
+                    >Remembered device · expires {{ device.expires_at | date: 'mediumDate' }}</small
+                  >
+                </div>
+                <button class="danger-text" (click)="removeSignInMethod('devices', device.id)">
+                  Remove device
+                </button>
               </div>
             }
           </section>
